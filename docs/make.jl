@@ -10,7 +10,7 @@ makedocs(;
     format=Documenter.HTML(;
         canonical="https://dainakai.github.io/ParticleHolography.jl",
         edit_link="main",
-        assets=String[],
+        assets=["assets/styles.css"],
     ),
     pages=[
         "Home" => "index.md",
