@@ -1,5 +1,6 @@
 module ParticleHolography
 
-# Write your package code here.
-
+    include("utils.jl")
+    include("holofunc.jl")
+    
 end
