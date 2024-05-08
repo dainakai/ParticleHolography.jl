@@ -21,7 +21,7 @@ using Pkg
 Pkg.add(url="https://github.com/dainakai/ParticleHolography.jl.git")
 ```
 
-## Quick Demonstration
+## Quick Start
 
 ### GPU-accelerated Gabor reconstruction
 
@@ -62,8 +62,10 @@ save("xyprojection.png", Array(d_xyproj)) # Copy the d_xyproj to host memory wit
 ```
 
 ![holo.png](assets/holo.png)
+*Input hologram image `holo.png`*
 
 ![xyprojection.png](assets/xyprojection.png)
+*Output xy projection image `xyprojection.png`*
 
 ```@index
 Pages = ["index.md"]
