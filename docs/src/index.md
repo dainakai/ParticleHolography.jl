@@ -6,7 +6,7 @@ CurrentModule = ParticleHolography
 
 Documentation for [ParticleHolography](https://github.com/dainakai/ParticleHolography.jl).
 
-A package for particle measurement using inline holography and phase retrieved holography.
+A package for particle measurement using inline holography.
 
 
 !!! note "Note" 
@@ -21,9 +21,17 @@ using Pkg
 Pkg.add(url="https://github.com/dainakai/ParticleHolography.jl.git")
 ```
 
-## Usage
+## Quick Demonstration
 
-### GPU-accelerated reconstruction
+### GPU-accelerated Gabor reconstruction
+
+The code below is an example of performing inline holographic reconstruction using an NVIDIA GPU (CUDA.jl). Your computer needs to be ready to use NVIDIA GPUs with CUDA.jl. It reconstructs a volume of size `datlenΔx` x `datlenΔx` x `slicesΔz` when the camera plane is considered as the `xy` plane and the direction perpendicular to the camera plane, which is the optical axis, is the `z` axis. Furthermore, it creates an `xy` projection image of the reconstructed volume by taking the minimum value of the `z` axis profile at each pixel in the `xy` plane of the reconstructed volume. The operation of extracting the xy projection image from the volume can be expressed by the following equation:
+
+```math
+\mathrm{xyproj}(x, y) = \min_{z} \left\{ \mathrm{rcstvol}(x, y, z) \right\}
+```
+
+Specify the hologram you want to reconstruct and the parameters, and save the projection image as `xyprojection.png`. 
 
 ```julia
 using ParticleHolography
@@ -39,6 +47,7 @@ img = load_gray2float("holo.png")
 z0 = 220000.0 # Optical distance between the hologram and the front surface of the reconstruction volume [μm]
 Δz = 100.0 # Optical distance between the reconstructed slices [μm]
 datlen = 1024 # Data length
+slices = 500 # Number of slices
 
 # Prepare the transfer functions
 d_sqr = cu_transfer_sqrt_arr(datlen, λ, Δx)
@@ -46,7 +55,7 @@ d_tf = cu_transfer(z0, datlen, λ, d_sqr)
 d_slice = cu_transfer(Δz, datlen, λ, d_sqr)
 
 # Reconstruction
-d_xyproj = cu_get_reconst_xyprojectin(cu(ComplexF32.(sqrt.(img))), d_tf, d_slice, 500)
+d_xyproj = cu_get_reconst_xyprojection(cu(ComplexF32.(sqrt.(img))), d_tf, d_slice, slices)
 
 # Save the result
 save("xyprojection.png", Array(d_xyproj)) # Copy the d_xyproj to host memory with Array()
@@ -56,22 +65,20 @@ save("xyprojection.png", Array(d_xyproj)) # Copy the d_xyproj to host memory wit
 
 ![xyprojection.png](assets/xyprojection.png)
 
+```@index
+Pages = ["index.md"]
+Order = [:function]
+```
+
 ```@docs
 load_gray2float
 cu_transfer_sqrt_arr
 cu_transfer
-cu_get_reconst_xyprojectin
+cu_get_reconst_xyprojection
 ```
 
 ### CPU-based reconstruction
 
 Preparing...
 
-## Index
 
-```@index
-```
-
-```@autodocs
-Modules = [ParticleHolography]
-```

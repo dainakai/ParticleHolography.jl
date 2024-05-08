@@ -173,7 +173,7 @@ Get the XY projection of the reconstructed volume from the light field `light_fi
 # Returns
 - `CuArray{Float32,2}`: The XY projection of the reconstructed volume.
 """
-function cu_get_reconst_xyprojectin(light_field::CuArray{ComplexF32,2}, transfer_front::CuArray{ComplexF32,2}, transfer_dz::CuArray{ComplexF32,2}, slices::Int) 
+function cu_get_reconst_xyprojection(light_field::CuArray{ComplexF32,2}, transfer_front::CuArray{ComplexF32,2}, transfer_dz::CuArray{ComplexF32,2}, slices::Int) 
     @assert size(light_field) == size(transfer_front) == size(transfer_dz) "All arrays must have the same size. Got $(size(light_field)), $(size(transfer_front)), $(size(transfer_dz))."
     
     vol = CuArray{Float32}(undef, size(light_field)..., slices)

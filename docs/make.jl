@@ -14,6 +14,13 @@ makedocs(;
     ),
     pages=[
         "Home" => "index.md",
+        "What's inline holography?" => "whats_inline_holography.md",
+        "Tutorials" => Any[
+            "Gabor holography" => "tutorials/gabor.md",
+            "Phase retrieved holography" => "tutorials/pr.md",
+            "Particle handling" => "tutorials/particle.md",
+        ],
+        "Reference" => "reference.md",
     ],
 )
 
