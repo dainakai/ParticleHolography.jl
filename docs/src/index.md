@@ -14,6 +14,25 @@ A package for particle measurement using inline holography.
     This package is under development, and none of the functions are guaranteed to work.
 
 
+## What you can do with ParticleHolography.jl
+
+- Perform inline holographic reconstruction using NVIDIA GPUs (CUDA.jl)
+- Detect particles in reconstructed volumes
+- Visualize the particle trajectories
+
+```@raw html
+<div style="display:flex; align-items:flex-start;">
+   <div style="flex:1; margin-right:10px;">
+       <img src="assets/holo.gif" alt="4000 fps droplet holograms" style="max-width:100%; height:auto;">
+       <p style="text-align:center;">Droplet holograms @4000 fps</p>
+   </div>
+   <div style="flex:1.23;">
+       <img src="assets/traj.gif" alt="Particle trajectories" style="max-width:100%; height:auto;">
+       <p style="text-align:center;">Particle trajectories</p>
+   </div>
+</div>
+```
+
 ## Installation
 
 ```julia
@@ -61,11 +80,18 @@ d_xyproj = cu_get_reconst_xyprojection(cu(ComplexF32.(sqrt.(img))), d_tf, d_slic
 save("xyprojection.png", Array(d_xyproj)) # Copy the d_xyproj to host memory with Array()
 ```
 
-![holo.png](assets/holo.png)
-*Input hologram image `holo.png`*
-
-![xyprojection.png](assets/xyprojection.png)
-*Output xy projection image `xyprojection.png`*
+```@raw html
+<div style="display:flex; align-items:flex-start;">
+   <div style="flex:1; margin-right:10px;">
+       <img src="assets/holo.png" alt="Input hologram image" style="max-width:100%; height:auto;">
+       <p style="text-align:center;">Input hologram image</p>
+   </div>
+   <div style="flex:1;">
+       <img src="assets/xyprojection.png" alt="Output xy projection image" style="max-width:100%; height:auto;">
+       <p style="text-align:center;">Output xy projection image</p>
+   </div>
+</div>
+```
 
 ```@index
 Pages = ["index.md"]
