@@ -1,7 +1,9 @@
 using ParticleHolography
 using Documenter
+using DocumenterCitations
 
 DocMeta.setdocmeta!(ParticleHolography, :DocTestSetup, :(using ParticleHolography); recursive=true)
+bib = CitationBibliography(joinpath(@__DIR__, "src", "refs.bib"))
 
 makedocs(;
     modules=[ParticleHolography],
@@ -19,9 +21,11 @@ makedocs(;
             "Gabor holography" => "tutorials/gabor.md",
             "Phase retrieved holography" => "tutorials/pr.md",
             "Particle handling" => "tutorials/particle.md",
+            "Record particle hologram" => "tutorials/record.md",
         ],
         "Reference" => "reference.md",
     ],
+    plugins=[bib],
 )
 
 deploydocs(;

@@ -25,7 +25,7 @@ Pkg.add(url="https://github.com/dainakai/ParticleHolography.jl.git")
 
 ### GPU-accelerated Gabor reconstruction
 
-The code below is an example of performing inline holographic reconstruction using an NVIDIA GPU (CUDA.jl). Your computer needs to be ready to use NVIDIA GPUs with CUDA.jl. It reconstructs a volume of size `datlenΔx` x `datlenΔx` x `slicesΔz` when the camera plane is considered as the `xy` plane and the direction perpendicular to the camera plane, which is the optical axis, is the `z` axis. Furthermore, it creates an `xy` projection image of the reconstructed volume by taking the minimum value of the `z` axis profile at each pixel in the `xy` plane of the reconstructed volume. The operation of extracting the xy projection image from the volume can be expressed by the following equation:
+The code below is an example of performing inline holographic reconstruction using an NVIDIA GPU (CUDA.jl). Your computer needs to be ready to use NVIDIA GPUs with CUDA.jl. It reconstructs a volume of size `datlenΔx` x `datlenΔx` x `slicesΔz` when the camera plane is considered as the ``xy`` plane and the direction perpendicular to the camera plane, which is the optical axis, is the ``z`` axis. Furthermore, it creates an `xy` projection image of the reconstructed volume by taking the minimum value of the ``z`` axis profile at each pixel in the ``xy`` plane of the reconstructed volume. The operation of extracting the xy projection image from the volume can be expressed by the following equation:
 
 ```math
 \mathrm{xyproj}(x, y) = \min_{z} \left\{ \mathrm{rcstvol}(x, y, z) \right\}
