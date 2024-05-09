@@ -52,9 +52,42 @@ If the phase information of the hologram could be restored to obtain an ideal re
 
 The method that achieves this is phase retrieval holography [liu](@cite) using the Gerchberg-Saxton algorithm [gerchberg](@cite).
 
-## Phase retrieved holography
+## Phase retrieval holography
+Phase retrieval holography is a technique for reconstructing the optical wavefront, including phase information, from a pair of simultaneous holograms captured at two points separated by a propagation distance ``\Delta z_p`` from the object. Let's denote the hologram closer to the object plane as ``I_1`` and the other as ``I_2``. Using the same indexing, we define the optical wavefront ``\psi`` and its phase distribution ``\phi``. The following iterative operation (Gerchberg-Saxton algorithm) is repeated for the two holograms:
+
+#### Initial condition
+```math
+\phi_1 = 0, \quad \psi_1 = \sqrt{I_1} \exp{\left( \mathrm{j}\phi_1 \right)}
+```
+
+#### STEP 1
+```math
+\psi_2 = \mathcal{F}^{-1}\left\{ \mathcal{F}\{\psi_1\} \cdot H_{\Delta z_p} \right\} \\
+\phi_2 = \arg{\left\{ \mathcal{F}\{\psi_2\} \right\}}
+```
+The wavefront ``\psi_1`` is propagated by the hologram separation distance ``\Delta z_p`` to calculate the wavefront ``\psi_2``, and its argument is saved as the phase distribution ``\phi_2``.
+
+#### STEP 2
+```math
+\psi_2 = \sqrt{I_2} \exp{\left( \mathrm{j}\phi_2 \right)}
+```
+The wavefront ``\psi_2`` is redefined by the square root of the hologram ``I_2`` and the phase distribution ``\phi_2``.
+
+#### STEP 3
+```math
+\psi_1 = \mathcal{F}^{-1}\left\{ \mathcal{F}\{\psi_2\} \cdot H_{-\Delta z_p} \right\} \\
+\phi_1 = \arg{\left\{ \mathcal{F}\{\psi_1\} \right\}}
+```
+The wavefront ``\psi_2 ``is back-propagated by the hologram separation distance ``\Delta z_p`` to calculate the wavefront ``\psi_1``, and its argument is saved as the phase distribution ``\phi_1``.
+
+#### STEP 4
+```math
+\psi_1 = \sqrt{I_1} \exp{\left( \mathrm{j}\phi_1 \right)}
+```
+The wavefront ``\psi_1`` is redefined by the square root of the hologram ``I_1`` and the phase distribution ``\phi_1``.
 
 
+For details such as the number of iterations of the above algorithm and camera arrangement, please refer to the literature such as [tanaka](@cite).
 
 ## References
 

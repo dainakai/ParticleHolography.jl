@@ -143,22 +143,6 @@ function cu_get_reconst_vol(light_field::CuArray{ComplexF32,2}, transfer_front::
     return vol
 end
 
-function _cu_get_xy_projection_from_vol!(Plane, vol, datlen, slices)
-    x = (blockIdx().x - 1) * blockDim().x + threadIdx().x
-    y = (blockIdx().y - 1) * blockDim().y + threadIdx().y
-
-    if x <= datlen && y <= datlen
-        min_val = vol[x, y, 1]
-        for z in 2:slices
-            @inbounds val = vol[x, y, z]
-            min_val = val < min_val ? val : min_val
-        end
-        Plane[x, y] = min_val
-    end
-
-    return nothing
-end
-
 """
     cu_get_reconst_xyprojectin(light_field, transfer_front, transfer_dz, slices)
 
@@ -176,24 +160,37 @@ Get the XY projection of the reconstructed volume from the light field `light_fi
 function cu_get_reconst_xyprojection(light_field::CuArray{ComplexF32,2}, transfer_front::CuArray{ComplexF32,2}, transfer_dz::CuArray{ComplexF32,2}, slices::Int) 
     @assert size(light_field) == size(transfer_front) == size(transfer_dz) "All arrays must have the same size. Got $(size(light_field)), $(size(transfer_front)), $(size(transfer_dz))."
     
-    vol = CuArray{Float32}(undef, size(light_field)..., slices)
-    
+    proj = CuArray{Float32}(undef, size(light_field)...)
+    projtmp = CuArray{Float32}(undef, size(light_field)...)
+
     fftholo = CUFFT.fftshift(CUFFT.fft(light_field))
     fftholo .= fftholo.*transfer_front
 
-    vol[:,:,1] .= fftholo |> CUFFT.ifftshift |> CUFFT.ifft |> (x -> x .* conj.(x)) .|> abs .|> Float32
+    proj .= fftholo |> CUFFT.ifftshift |> CUFFT.ifft |> (x -> x .* conj.(x)) .|> abs .|> Float32
 
     for i in 2:slices
         fftholo .= fftholo.*transfer_dz
-        vol[:,:,i] .= fftholo |> CUFFT.ifftshift |> CUFFT.ifft |> (x -> x .* conj.(x)) .|> abs .|> Float32
+        projtmp .= fftholo |> CUFFT.ifftshift |> CUFFT.ifft |> (x -> x .* conj.(x)) .|> abs .|> Float32 
+        proj .= min(proj, projtmp)
     end
 
-    xyprojection = CuArray{Float32}(undef, size(light_field)...)
-    threads = (32, 32)
-    blocks = cld.((size(light_field)[1], size(light_field)[2]), threads)
-    @cuda threads=threads blocks=blocks _cu_get_xy_projection_from_vol!(xyprojection, vol, size(light_field, 1), slices)
+    return proj
+end
 
-    return xyprojection
+function _cu_get_xy_projection_from_vol!(Plane, vol, datlen, slices)
+    x = (blockIdx().x - 1) * blockDim().x + threadIdx().x
+    y = (blockIdx().y - 1) * blockDim().y + threadIdx().y
+
+    if x <= datlen && y <= datlen
+        min_val = vol[x, y, 1]
+        for z in 2:slices
+            @inbounds val = vol[x, y, z]
+            min_val = val < min_val ? val : min_val
+        end
+        Plane[x, y] = min_val
+    end
+
+    return nothing
 end
 
 """
