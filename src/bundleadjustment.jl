@@ -359,6 +359,7 @@ function get_distortion_coefficients(img1::Array{<:AbstractFloat,2}, img2::Array
 
     if verbose
         @info "verbose=true is set. Plotting the results. It may take a while."
+        errorVec = getErrorVec(vecArray,coefa)
         println("The mean squared error after iteration: $(mean(errorVec.^2))")
         n = div(imgLen,gridSize)-1
         f = Figure(resolution = (1700,500),figure_padding = 1)

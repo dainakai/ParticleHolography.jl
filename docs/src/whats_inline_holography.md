@@ -52,7 +52,7 @@ If the phase information of the hologram could be restored to obtain an ideal re
 
 The method that achieves this is phase retrieval holography [liu](@cite) using the Gerchberg-Saxton algorithm [gerchberg](@cite).
 
-## Phase retrieval holography
+## [Phase retrieval holography](@id pr_explain)
 Phase retrieval holography is a technique for reconstructing the optical wavefront, including phase information, from a pair of simultaneous holograms captured at two points separated by a propagation distance ``\Delta z_p`` from the object. Let's denote the hologram closer to the object plane as ``I_1`` and the other as ``I_2``. Using the same indexing, we define the optical wavefront ``\psi`` and its phase distribution ``\phi``. The following iterative operation (Gerchberg-Saxton algorithm) is repeated for the two holograms:
 
 #### Initial condition
