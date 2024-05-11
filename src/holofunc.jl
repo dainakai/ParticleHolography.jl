@@ -123,7 +123,7 @@ Reconstruct the observation volume from the light field `light_field` using the 
 - `slices::Int`: The number of slices in the volume.
 
 # Returns
-- `CuArray{Float32,3}`: The reconstructed volume.
+- `CuArray{Float32,3}`: The reconstructed complex amplitude volume.
 """
 function cu_get_reconst_vol(light_field::CuArray{ComplexF32,2}, transfer_front::CuArray{ComplexF32,2}, transfer_dz::CuArray{ComplexF32,2}, slices::Int) 
     @assert size(light_field) == size(transfer_front) == size(transfer_dz) "All arrays must have the same size. Got $(size(light_field)), $(size(transfer_front)), $(size(transfer_dz))."

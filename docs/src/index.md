@@ -105,8 +105,3 @@ cu_transfer
 cu_get_reconst_xyprojection
 ```
 
-### CPU-based reconstruction
-
-Preparing...
-
-

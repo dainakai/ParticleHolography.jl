@@ -1,10 +1,19 @@
 # Phase retrieval holography
 
-[Phase retrieval holography](@ref pr_explain)
+Please refer to [Phase retrieval holography](@ref pr_explain) for the principles of this method. Below, we show the necessary procedures and an implementation example for reconstructing using this method.
 
 ## Bundle adjustment
 
-ランダムドットを印刷したガラスプレートなどの撮影画像組を用意
+We perform bundle adjustment [okatani](@cite) to correct for rotational and aberrational misalignments between the two camera views in the ``xy ``plane. First, for a pair of images with densely distributed features throughout the field of view, such as a glass plate with printed random dots, we create a vector map of displacement amounts (right figure below) by calculating the cross-correlation coefficients between neighboring batches between the two images, similar to Particle Image Velocimetry (PIV) [willert](@cite). This map represents the displacement of `img2` relative to the reference image `img1`. By determining the image transformation coefficients ``\bm{a}`` that make this map nearly zero throughout, alignment is achieved.
+
+```math
+\begin{aligned}
+x' &= a_1 + a_2 x + a_3 y + a_4 x^2 + a_5 xy + a_6 y^2 \\
+y' &= a_7 + a_8 x + a_9 y + a_{10} x^2 + a_{11} xy + a_{12} y^2
+\end{aligned}
+```
+
+Prepare a set of benchmark images, such as a glass plate with printed random dots. The following are Gabor reconstruction images of random dot holograms.
 
 ```@raw html
 <div style="display:flex; align-items:flex-start;">
@@ -19,7 +28,7 @@
 </div>
 ```
 
-これらに対してバンドルアジャストメントを行う。すなわち、二次の画像変換後の画像のズレが最小となるような12個の係数配列を求める。
+We perform bundle adjustment on these images. If `verbose=true` is specified, the images before and after the bundle adjustment transformation and the displacement map are saved. If not specified (default is verbose=false), only the transformation coefficients are returned.
 
 ```julia
 using ParticleHolography
@@ -48,16 +57,16 @@ coeffs = get_distortion_coefficients(img1, img2, verbose=true)
 -1.749346158409748e-6
 ```
 
-`verbose=true`を指定すると、バンドルアジャストメントの変換前後の画像とズレ量マップが保存されます。
-
 ![Before bundle adjustment](../assets/before_BA.jpg)
 *Before bundle adjustment*
 
 ![After bundle adjustment](../assets/after_BA.jpg)
 *After bundle adjustment*
 
-こうして得た係数配列を用いて、撮影画像の歪みを補正します。
+Using the coefficient array obtained in this way, we correct the distortion of the captured images.
 
 ```julia
 img2_corrected = quadratic_distortion_correction(img2, coeffs)
 ```
+
+## 
