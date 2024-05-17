@@ -9,6 +9,10 @@ using Glob
 
 pathlist = glob("path/to/hologram/*.png")
 bkg = make_background(pathlist, mode=:mode)
+
+# Remove the background
+img = load_gray2float("path/to/hologram/holo1.png")
+img .= img .- bkg .+ 64/255
 ```
 
 The `mode` argument can be set to `:mean` or `:mode`. The default is `:mode`. 
