@@ -34,8 +34,8 @@ We perform bundle adjustment on these images. If `verbose=true` is specified, th
 using ParticleHolography
 
 # Load images
-img1 = load_gray2float("../assets/impcam1_enhanced.png")
-img2 = load_gray2float("../assets/impcam2_enhanced.png")
+img1 = load_gray2float("./test/impcam1_enhanced.png")
+img2 = load_gray2float("./test/impcam2_enhanced.png")
 
 # Bundle adjustment
 coeffs = get_distortion_coefficients(img1, img2, verbose=true)
@@ -69,4 +69,79 @@ Using the coefficient array obtained in this way, we correct the distortion of t
 img2_corrected = quadratic_distortion_correction(img2, coeffs)
 ```
 
-## 
+## Reconstruction
+
+```julia
+using ParticleHolography
+using CUDA
+using Images
+
+# Load hologram
+img1 = load_gray2float("./test/holo1.png")
+img2 = load_gray2float("./test/holo2.png")
+
+# Parameters
+λ = 0.6328 # Wavelength [μm] 
+Δx = 10.0 # Pixel size [μm]
+z0 = 80000.0 # Optical distance between the hologram and the front surface of the reconstruction volume [μm]
+Δz = 100.0 # Optical distance between the reconstructed slices [μm]
+datlen = 1024 # Data length
+slices = 1000 # Number of slices
+
+# Parameters for phase retrieval holography
+prz = 80000.0 # Distance between the two holograms [μm]
+priter = 20 # Number of iterations of the Gerchberg-Saxton algorithm
+
+# Prepare the transfer functions
+d_sqr = cu_transfer_sqrt_arr(datlen, λ, Δx)
+d_tf = cu_transfer(z0, datlen, λ, d_sqr)
+d_slice = cu_transfer(Δz, datlen, λ, d_sqr)
+d_pr = cu_transfer(prz, datlen, λ, d_sqr)
+d_pr_inv = cu_transfer(-prz, datlen, λ, d_sqr)
+
+# Image correction
+img2_corrected = quadratic_distortion_correction(img2, coeffs)
+
+# Retrieve phase information
+d_holo = cu_phase_retrieval_holo(cu(img1), cu(img2_corrected), d_pr, d_pr_inv, priter, datlen)
+
+# Reconstruction
+d_xyproj = cu_get_reconst_xyprojection(d_holo, d_tf, d_slice, slices)
+
+# Save the result
+save("xyprojection_pr.png", Array(d_xyproj)) # Copy the d_xyproj to host memory with Array()
+```
+
+```@raw html
+<div style="display:flex; align-items:flex-start;">
+   <div style="flex:1; margin-right:10px;">
+       <img src="../../assets/holo.png" alt="Input hologram image" style="max-width:100%; height:auto;">
+       <p style="text-align:center;">Input hologram image</p>
+   </div>
+   <div style="flex:1;">
+       <img src="../../assets/xyprojection_pr.png" alt="Output xy projection image" style="max-width:100%; height:auto;">
+       <p style="text-align:center;">Output xy projection image</p>
+   </div>
+</div>
+```
+
+## Index
+
+```@index
+Pages = ["pr.md"]
+Order = [:function]
+```
+
+## Functions
+
+```@docs
+get_distortion_coefficients
+quadratic_distortion_correction
+cu_phase_retrieval_holo
+```
+
+## References
+
+```@bibliography
+Pages = ["pr.md"]
+```

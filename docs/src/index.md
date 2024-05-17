@@ -58,26 +58,26 @@ using CUDA
 using Images
 
 # Load hologram
-img = load_gray2float("holo.png")
+img = load_gray2float("./test/holo1.png")
 
 # Parameters
 λ = 0.6328 # Wavelength [μm] 
 Δx = 10.0 # Pixel size [μm]
-z0 = 220000.0 # Optical distance between the hologram and the front surface of the reconstruction volume [μm]
+z0 = 80000.0 # Optical distance between the hologram and the front surface of the reconstruction volume [μm]
 Δz = 100.0 # Optical distance between the reconstructed slices [μm]
 datlen = 1024 # Data length
-slices = 500 # Number of slices
+slices = 1000 # Number of slices
 
 # Prepare the transfer functions
 d_sqr = cu_transfer_sqrt_arr(datlen, λ, Δx)
-d_tf = cu_transfer(z0, datlen, λ, d_sqr)
-d_slice = cu_transfer(Δz, datlen, λ, d_sqr)
+d_tf = cu_transfer(-z0, datlen, λ, d_sqr)
+d_slice = cu_transfer(-Δz, datlen, λ, d_sqr)
 
 # Reconstruction
 d_xyproj = cu_get_reconst_xyprojection(cu(ComplexF32.(sqrt.(img))), d_tf, d_slice, slices)
 
 # Save the result
-save("xyprojection.png", Array(d_xyproj)) # Copy the d_xyproj to host memory with Array()
+save("xyprojection_gabor.png", Array(d_xyproj)) # Copy the d_xyproj to host memory with Array()
 ```
 
 ```@raw html
@@ -93,10 +93,14 @@ save("xyprojection.png", Array(d_xyproj)) # Copy the d_xyproj to host memory wit
 </div>
 ```
 
+## Index
+
 ```@index
 Pages = ["index.md"]
 Order = [:function]
 ```
+
+## Functions
 
 ```@docs
 load_gray2float

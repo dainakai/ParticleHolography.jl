@@ -1,7 +1,10 @@
 using Images
 using StatsBase
+using ProgressMeter
+using Colors
+using FixedPointNumbers
 
-export load_gray2float, floatimg2cvgray, cvgray2floatimg, find_external_contours, draw_contours!
+export load_gray2float, floatimg2cvgray, cvgray2floatimg, find_external_contours, draw_contours!, make_background
 
 """
     load_gray2float(path)
@@ -211,5 +214,42 @@ end
 function draw_contours!(image, color, contours)
     for cnt in contours
         _draw_contour!(image, color, cnt)
+    end
+end
+
+"""
+    make_background(pathlist; mode=:mode)
+
+Make a background image from a list of image paths. The background image is calculated by taking the mean or mode of the images in the list. The default mode is :mode.
+
+# Arguments
+- `pathlist::Vector{String}`: A list of image paths. `glob()` can be used to generate this list.
+- `mode::Symbol`: The mode to use for calculating the background. Options are :mean or :mode. Default is :mode.
+
+# Returns
+- `Array{Float64, 2}`: The background image.
+"""
+function make_background(pathlist::Vector{String}; mode=:mode)
+    if mode == :mean
+        background = zeros(Float64, size(load_gray2float(pathlist[1])))
+        @showprogress desc="Background calculating..." for path in pathlist
+            background .= background .+ Float64.(load_gray2float(path))
+        end
+        background /= length(pathlist)
+        return background
+
+    elseif mode == :mode
+        votevol = zeros(Int, (256,size(load_gray2float(pathlist[1]))...))
+        datlen = size(load(pathlist[1]))[1]
+        @showprogress desc="Background calculating..." for path in pathlist
+            img = Int.(reinterpret.(UInt8, channelview(Gray.(load(path)))))
+            for x in 1:datlen
+                for y in 1:datlen
+                    votevol[img[y,x]+1,y,x] += 1
+                end
+            end
+        end
+        background = [(value[1]-1.0)./255.0 for value in argmax(votevol, dims=1)[1,:,:]]
+        return background
     end
 end

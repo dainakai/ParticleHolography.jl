@@ -1,7 +1,7 @@
 using CUDA
 using CUDA.CUFFT
 
-export cu_transfer_sqrt_arr, cu_transfer, cu_phase_retrieval_holo, cu_get_reconst_vol, cu_get_reconst_xyprojectin, cu_get_reconst_vol_and_xyprojection
+export cu_transfer_sqrt_arr, cu_transfer, cu_phase_retrieval_holo, cu_get_reconst_vol, cu_get_reconst_xyprojection, cu_get_reconst_vol_and_xyprojection
 
 function _cu_transfer_sqrt_arr!(Plane, datLen, wavLen, dx)
     x = (blockIdx().x-1)*blockDim().x + threadIdx().x
@@ -171,7 +171,7 @@ function cu_get_reconst_xyprojection(light_field::CuArray{ComplexF32,2}, transfe
     for i in 2:slices
         fftholo .= fftholo.*transfer_dz
         projtmp .= fftholo |> CUFFT.ifftshift |> CUFFT.ifft |> (x -> x .* conj.(x)) .|> abs .|> Float32 
-        proj .= min(proj, projtmp)
+        proj .= CUDA.min.(proj, projtmp)
     end
 
     return proj
@@ -231,3 +231,12 @@ function cu_get_reconst_vol_and_xyprojection(light_field::CuArray{ComplexF32,2},
     return vol, xyprojection
 end
 
+
+# function cu_particle_coordinates(light_field::CuArray[ComplexF32,2], transfer_front::CuArray[ComplexF32,2], transfer_dz::CuArray[ComplexF32,2], slices::Int, threshold::Float32, front_z::Float32, dz::Float32, dx::Float32, datlen::Int)
+#     @assert size(light_field) == size(transfer_front) == size(transfer_dz) "All arrays must have the same size. Got $(size(light_field)), $(size(transfer_front)), $(size(transfer_dz))."
+
+#     fftholo = CUFFT.fftshift(CUFFT.fft(light_field))
+#     fftholo .= fftholo.*transfer_front
+
+
+# end

@@ -92,4 +92,5 @@ For details such as the number of iterations of the above algorithm and camera a
 ## References
 
 ```@bibliography
+Pages = ["whats_inline_holography.md"]
 ```

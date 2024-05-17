@@ -342,7 +342,7 @@ Get the distortion coefficients from the two images `img1` and `img2`. The defau
 # Returns
 - `Vector{<:AbstractFloat}`: The distortion coefficients.
 """
-function get_distortion_coefficients(img1::Array{<:AbstractFloat,2}, img2::Array{<:AbstractFloat,2}; verbose=false, gridSize = 128, intrSize = 128, srchSize = 256)
+function get_distortion_coefficients(img1::Array{<:AbstractFloat,2}, img2::Array{<:AbstractFloat,2}; verbose=false, gridSize = 128, intrSize = 128, srchSize = 256, save_extension = "png")
     @assert size(img1) == size(img2) "The size of the images must be the same. Got $(size(img1)) and $(size(img2))."
     imgLen = size(img1)[1]
     vecArray = getPIVMap_GPU(img1,img2,imgLen,gridSize,intrSize,srchSize)
@@ -351,7 +351,7 @@ function get_distortion_coefficients(img1::Array{<:AbstractFloat,2}, img2::Array
     coefa = fill(1.0,12)
     itr = 1
     while itr <= 10
-        errorVec= getErrorVec(vecArray,coefa)
+        errorVec= getErrorVec(vecArray,coefa,gridSize,imgLen)
         deltaCoefa = simultanious_equation_solver(modified_Cholesky_decomposition(hMat),yacobian,errorVec)
         coefa += deltaCoefa
         itr += 1
@@ -359,10 +359,10 @@ function get_distortion_coefficients(img1::Array{<:AbstractFloat,2}, img2::Array
 
     if verbose
         @info "verbose=true is set. Plotting the results. It may take a while."
-        errorVec = getErrorVec(vecArray,coefa)
-        println("The mean squared error after iteration: $(mean(errorVec.^2))")
+        errorVec = getErrorVec(vecArray,coefa,gridSize,imgLen)
+        println("The mean squared error after iteration: $(mean(sqrt.(errorVec.^2)))")
         n = div(imgLen,gridSize)-1
-        f = Figure(resolution = (1700,500),figure_padding = 1)
+        f = Figure(size = (1700,500),figure_padding = 1)
         arrowax = Makie.Axis(f[1,3], aspect = 1 , yreversed=false, backgroundcolor="white", title="PIV Vector Field")
         imageax1 = Makie.Axis(f[1, 1], aspect = DataAspect(), yreversed = false, title = "Camera 1")
         imageax2 = Makie.Axis(f[1, 2], aspect = DataAspect(), yreversed = false, title = "Camera 2")
@@ -373,8 +373,8 @@ function get_distortion_coefficients(img1::Array{<:AbstractFloat,2}, img2::Array
         vecxObservable = Observable(rotr90(vecArray[:,:,1]))
         vecyObservable = Observable(-rotr90(vecArray[:,:,2]))
         strObservable = Observable(vec(sqrt.(vecArray[:,:,1].^2 .+ vecArray[:,:,2].^2)))
-        xs = [i*128 for i in 1:n]
-        ys = [i*128 for i in 1:n]
+        xs = [i*gridSize for i in 1:n]
+        ys = [i*gridSize for i in 1:n]
 
         function normalize_values(values)
             min_val = 0
@@ -392,7 +392,7 @@ function get_distortion_coefficients(img1::Array{<:AbstractFloat,2}, img2::Array
         arrow_colors = lift(x -> color_mapping(x), norm_strObservable)
         arrows!(arrowax, xs, ys, vecxObservable, vecyObservable, arrowsize=10, lengthscale=20, arrowcolor = arrow_colors, linecolor = arrow_colors)
         firstcolor = Colorbar(f[1,4], limits = (0,maximum(vec(sqrt.(vecArray[:,:,1].^2 .+ vecArray[:,:,2].^2)))), colormap = :viridis)
-        Makie.save("./before_BA.pdf",f)
+        Makie.save("./before_BA."*save_extension,f)
         img3 = quadratic_distortion_correction(img2,coefa)
         vecArray2 = getPIVMap_GPU(img1,img3,imgLen,gridSize,intrSize,srchSize)
         vecxObservable[] = rotr90(vecArray2[:,:,1])
@@ -401,7 +401,7 @@ function get_distortion_coefficients(img1::Array{<:AbstractFloat,2}, img2::Array
         imgObservable2[] = rotr90(RGB.(img3,img3,img3))
         delete!(firstcolor)
         Colorbar(f[1,4], limits = (0,maximum(vec(sqrt.(vecArray2[:,:,1].^2 .+ vecArray2[:,:,2].^2)))), colormap = :viridis)
-        Makie.save("./after_BA.pdf",f)
+        Makie.save("./after_BA."*save_extension,f)
         Images.save("./adjusted_image.png",img3)
     end
     return coefa
