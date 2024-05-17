@@ -176,10 +176,10 @@ end
 8-way connected component labeling on binary image based on the article by Playne and Hawick https://ieeexplore.ieee.org/document/8274991 and the implementation by FolkeV https://github.com/FolkeV/CUDA_CCL. It works using the CUDA.jl package and NVIDIA GPUs.
 
 # Arguments
-- `input_img::CuArray{Float32, 2}: Input binary image.
+- `input_img::CuArray{Float32, 2}`: Input binary image.
 
 # Returns
-- `output_img::CuArray{UInt32, 2}: Output labeled image.
+- `output_img::CuArray{UInt32, 2}`: Output labeled image.
 
 """
 function cu_connected_component_labeling(input_img)

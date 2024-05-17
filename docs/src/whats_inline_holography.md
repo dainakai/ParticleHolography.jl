@@ -30,7 +30,7 @@ I(x,y; z_0+\Delta z) = \left| \mathcal{F}^{-1}\left\{ \mathcal{F}\{\psi(x,y;z_0)
 
 ```\psi(x,y;z_0)``` is the wavefront of the parallel light just before passing through the object plane. If no objects exist before this point, the phase at each point can be set to 0, and we can assume ``\psi(x,y;z_0)=1``. Even if objects exist before this point, we can calculate the light field propagated from the position of the farthest particle by setting the phase there to 0 and using the same method as in the above equation. Since the hologram is the intensity distribution of the light field, it is represented by the square of the amplitude of the wavefront. The light field is a complex number, so this calculation involves taking the product with its complex conjugate.
 
-## Hologram reconstruction
+## [Hologram reconstruction (Gabor holography)](@id gabor_explain)
 It is possible to reconstruct a hologram by directly propagating the intensity distribution of the light field, which is the hologram, in the negative ``z`` direction [vikram](@cite). However, to maintain consistency with the phase retrieval method, which will be explained later, the reconstructed wavefront is taken as the square root of the hologram.
 
 ```math
