@@ -4,7 +4,7 @@ using ProgressMeter
 using Colors
 using FixedPointNumbers
 
-export load_gray2float, floatimg2cvgray, cvgray2floatimg, find_external_contours, draw_contours!, make_background
+export load_gray2float, find_external_contours, draw_contours!, make_background
 
 """
     load_gray2float(path)
@@ -19,39 +19,6 @@ Load a grayscale image from a file and return it as a Array{Float32, 2} array.
 """
 function load_gray2float(path::String)
     out = Float32.(channelview(Gray.(load(path))))
-end
-
-"""
-    floatimg2cvgray(img)
-
-Convert a Array{Float32, 2} image to a OpenCV capable image.
-
-# Arguments
-- `img::Array{Float32, 2}`: The image to convert.
-
-# Returns
-- `Array{N0f8, 3}`: The image as a OpenCV capable image.
-"""
-function floatimg2cvgray(img::Array{Float32, 2})
-    newimg = rawview(channelview(Gray{N0f8}.(img)))
-    newimg  = reshape(newimg, 1, size(newimg)[1], size(newimg)[2])
-    return newimg 
-end
-
-"""
-    cvgray2floatimg(img)
-
-Convert a OpenCV capable image to a Array{Float32, 2} image.
-
-# Arguments
-- `img::Array{N0f8, 3}`: The image to convert.
-
-# Returns
-- `Array{Float32, 2}`: The image as a Float32 array.
-"""
-function cvgray2floatimg(img)
-    newimg  = reshape(img, size(img)[2], size(img)[3])
-    return Float32.(newimg./255.0)
 end
 
 
@@ -141,10 +108,10 @@ end
 """
     find_external_contours(image)
 
-Finds non-hole contours in binary images. Equivalent to CV_RETR_EXTERNAL and CV_CHAIN_APPROX_NONE modes of the findContours() function provided in OpenCV.
+Finds non-hole contours in binary images. This function is excuted on the CPU. Equivalent to CV_RETR_EXTERNAL and CV_CHAIN_APPROX_NONE modes of the findContours() function provided in OpenCV.
 
 # Arguments
-- `image`: The binary image. 
+- `image`: The binary image. the image should be a 2D array of 0 and 1.
 
 # Returns
 - `Vector{Vector{CartesianIndex}}`: A vector of contours. Each contour is a vector of CartesianIndex.
