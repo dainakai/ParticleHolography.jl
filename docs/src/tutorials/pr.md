@@ -34,8 +34,8 @@ We perform bundle adjustment on these images. If `verbose=true` is specified, th
 using ParticleHolography
 
 # Load images
-img1 = load_gray2float("../assets/impcam1_enhanced.png")
-img2 = load_gray2float("../assets/impcam2_enhanced.png")
+img1 = load_gray2float("./test/impcam1_enhanced.png")
+img2 = load_gray2float("./test/impcam2_enhanced.png")
 
 # Bundle adjustment
 coeffs = get_distortion_coefficients(img1, img2, verbose=true)
@@ -43,18 +43,18 @@ coeffs = get_distortion_coefficients(img1, img2, verbose=true)
 
 ```
 12-element Vector{Float64}:
-1.1502560374425654
-0.9971390059912079
-0.005022879500243858
-9.62795044814447e-7
--7.032017562352377e-7
-1.3542774090666107e-7
-5.521164421321545
--0.005516712482369036
-1.0009145355970703
--3.4727403247879636e-8
-7.851521359601221e-7
--1.749346158409748e-6
+  1.2327552152117167
+  1.0015525820910993
+ -0.0037540380646719548
+ -2.6720154054315695e-7
+ -3.948548695992629e-7
+  2.473601876134243e-7
+ -2.168620598151057
+  0.0038907742401993704
+  1.0008643186894999
+  8.964404907592924e-8
+  7.124903769000833e-9
+  1.3007094240084437e-7
 ```
 
 ![Before bundle adjustment](../assets/before_BA.jpg)
@@ -69,4 +69,79 @@ Using the coefficient array obtained in this way, we correct the distortion of t
 img2_corrected = quadratic_distortion_correction(img2, coeffs)
 ```
 
-## 
+## Reconstruction
+
+```julia
+using ParticleHolography
+using CUDA
+using Images
+
+# Load hologram
+img1 = load_gray2float("./test/holo1.png")
+img2 = load_gray2float("./test/holo2.png")
+
+# Parameters
+λ = 0.6328 # Wavelength [μm] 
+Δx = 10.0 # Pixel size [μm]
+z0 = 80000.0 # Optical distance between the hologram and the front surface of the reconstruction volume [μm]
+Δz = 100.0 # Optical distance between the reconstructed slices [μm]
+datlen = 1024 # Data length
+slices = 1000 # Number of slices
+
+# Parameters for phase retrieval holography
+prz = 80000.0 # Distance between the two holograms [μm]
+priter = 20 # Number of iterations of the Gerchberg-Saxton algorithm
+
+# Prepare the transfer functions
+d_sqr = cu_transfer_sqrt_arr(datlen, λ, Δx)
+d_tf = cu_transfer(z0, datlen, λ, d_sqr)
+d_slice = cu_transfer(Δz, datlen, λ, d_sqr)
+d_pr = cu_transfer(prz, datlen, λ, d_sqr)
+d_pr_inv = cu_transfer(-prz, datlen, λ, d_sqr)
+
+# Image correction
+img2_corrected = quadratic_distortion_correction(img2, coeffs)
+
+# Retrieve phase information
+d_holo = cu_phase_retrieval_holo(cu(img1), cu(img2_corrected), d_pr, d_pr_inv, priter, datlen)
+
+# Reconstruction
+d_xyproj = cu_get_reconst_xyprojection(d_holo, d_tf, d_slice, slices)
+
+# Save the result
+save("xyprojection_pr.png", Array(d_xyproj)) # Copy the d_xyproj to host memory with Array()
+```
+
+```@raw html
+<div style="display:flex; align-items:flex-start;">
+   <div style="flex:1; margin-right:10px;">
+       <img src="../../assets/holo.png" alt="Input hologram image" style="max-width:100%; height:auto;">
+       <p style="text-align:center;">Input hologram image</p>
+   </div>
+   <div style="flex:1;">
+       <img src="../../assets/xyprojection_pr.png" alt="Output xy projection image" style="max-width:100%; height:auto;">
+       <p style="text-align:center;">Output xy projection image</p>
+   </div>
+</div>
+```
+
+## Index
+
+```@index
+Pages = ["pr.md"]
+Order = [:function]
+```
+
+## Functions
+
+```@docs
+get_distortion_coefficients
+quadratic_distortion_correction
+cu_phase_retrieval_holo
+```
+
+## References
+
+```@bibliography
+Pages = ["pr.md"]
+```

@@ -1,7 +1,10 @@
 using Images
 using StatsBase
+using ProgressMeter
+using Colors
+using FixedPointNumbers
 
-export load_gray2float, floatimg2cvgray, cvgray2floatimg, find_external_contours, draw_contours!
+export load_gray2float, find_external_contours, draw_contours!, make_background
 
 """
     load_gray2float(path)
@@ -16,39 +19,6 @@ Load a grayscale image from a file and return it as a Array{Float32, 2} array.
 """
 function load_gray2float(path::String)
     out = Float32.(channelview(Gray.(load(path))))
-end
-
-"""
-    floatimg2cvgray(img)
-
-Convert a Array{Float32, 2} image to a OpenCV capable image.
-
-# Arguments
-- `img::Array{Float32, 2}`: The image to convert.
-
-# Returns
-- `Array{N0f8, 3}`: The image as a OpenCV capable image.
-"""
-function floatimg2cvgray(img::Array{Float32, 2})
-    newimg = rawview(channelview(Gray{N0f8}.(img)))
-    newimg  = reshape(newimg, 1, size(newimg)[1], size(newimg)[2])
-    return newimg 
-end
-
-"""
-    cvgray2floatimg(img)
-
-Convert a OpenCV capable image to a Array{Float32, 2} image.
-
-# Arguments
-- `img::Array{N0f8, 3}`: The image to convert.
-
-# Returns
-- `Array{Float32, 2}`: The image as a Float32 array.
-"""
-function cvgray2floatimg(img)
-    newimg  = reshape(img, size(img)[2], size(img)[3])
-    return Float32.(newimg./255.0)
 end
 
 
@@ -138,10 +108,10 @@ end
 """
     find_external_contours(image)
 
-Finds non-hole contours in binary images. Equivalent to CV_RETR_EXTERNAL and CV_CHAIN_APPROX_NONE modes of the findContours() function provided in OpenCV.
+Finds non-hole contours in binary images. This function is excuted on the CPU. Equivalent to CV_RETR_EXTERNAL and CV_CHAIN_APPROX_NONE modes of the findContours() function provided in OpenCV.
 
 # Arguments
-- `image`: The binary image. 
+- `image`: The binary image. the image should be a 2D array of 0 and 1.
 
 # Returns
 - `Vector{Vector{CartesianIndex}}`: A vector of contours. Each contour is a vector of CartesianIndex.
@@ -211,5 +181,42 @@ end
 function draw_contours!(image, color, contours)
     for cnt in contours
         _draw_contour!(image, color, cnt)
+    end
+end
+
+"""
+    make_background(pathlist; mode=:mode)
+
+Make a background image from a list of image paths. The background image is calculated by taking the mean or mode of the images in the list. The default mode is :mode.
+
+# Arguments
+- `pathlist::Vector{String}`: A list of image paths. `glob()` can be used to generate this list.
+- `mode::Symbol`: The mode to use for calculating the background. Options are :mean or :mode. Default is :mode.
+
+# Returns
+- `Array{Float64, 2}`: The background image.
+"""
+function make_background(pathlist::Vector{String}; mode=:mode)
+    if mode == :mean
+        background = zeros(Float64, size(load_gray2float(pathlist[1])))
+        @showprogress desc="Background calculating..." for path in pathlist
+            background .= background .+ Float64.(load_gray2float(path))
+        end
+        background /= length(pathlist)
+        return background
+
+    elseif mode == :mode
+        votevol = zeros(Int, (256,size(load_gray2float(pathlist[1]))...))
+        datlen = size(load(pathlist[1]))[1]
+        @showprogress desc="Background calculating..." for path in pathlist
+            img = Int.(reinterpret.(UInt8, channelview(Gray.(load(path)))))
+            for x in 1:datlen
+                for y in 1:datlen
+                    votevol[img[y,x]+1,y,x] += 1
+                end
+            end
+        end
+        background = [(value[1]-1.0)./255.0 for value in argmax(votevol, dims=1)[1,:,:]]
+        return background
     end
 end
