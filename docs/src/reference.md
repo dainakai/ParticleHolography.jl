@@ -8,7 +8,7 @@ This is the reference documentation for the `ParticleHolography` package.
 Pages = ["reference.md"]
 ```
 
-## Functions
+## Types and Functions
 
 ```@autodocs
 Modules = [ParticleHolography]
