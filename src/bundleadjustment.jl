@@ -26,7 +26,7 @@ function quadratic_distortion_correction(img::Array{<:AbstractFloat,2} , coefa::
     bkg = mean(img)
     refX = Array{Int}(undef,n*n)
     refY = Array{Int}(undef,n*n)
-    out = Array{AbstractFloat}(undef,n,n)
+    out = Array{Float64}(undef,n,n)
     
     for i in 1:n
         for j in 1:n

@@ -1,4 +1,5 @@
-# GPU-accelerated Gabor reconstruction
+# Gabor holography
+## GPU-accelerated Gabor reconstruction
 
 Please refer to [Gabor holography](@ref gabor_explain) for the principles of this method. The code below is an example of performing inline holographic reconstruction using an NVIDIA GPU (CUDA.jl). Your computer needs to be ready to use NVIDIA GPUs with CUDA.jl. It reconstructs a volume of size `datlenΔx` x `datlenΔx` x `slicesΔz` when the camera plane is considered as the ``xy`` plane and the direction perpendicular to the camera plane, which is the optical axis, is the ``z`` axis. Furthermore, it creates an ``xy`` projection image of the reconstructed volume by taking the minimum value of the ``z`` axis profile at each pixel in the ``xy`` plane of the reconstructed volume. The operation of extracting the xy projection image from the volume can be expressed by the following equation:
 
@@ -29,8 +30,11 @@ d_sqr = cu_transfer_sqrt_arr(datlen, λ, Δx)
 d_tf = cu_transfer(-z0, datlen, λ, d_sqr)
 d_slice = cu_transfer(-Δz, datlen, λ, d_sqr)
 
+# Make a wavefront
+d_wavefront = cu_gabor_wavefront(img)
+
 # Reconstruction
-d_xyproj = cu_get_reconst_xyprojection(cu(ComplexF32.(sqrt.(img))), d_tf, d_slice, slices)
+d_xyproj = cu_get_reconst_xyprojection(d_wavefront, d_tf, d_slice, slices)
 
 # Save the result
 save("xyprojection_gabor.png", Array(d_xyproj)) # Copy the d_xyproj to host memory with Array()
@@ -53,7 +57,7 @@ save("xyprojection_gabor.png", Array(d_xyproj)) # Copy the d_xyproj to host memo
 
 ```@index
 Pages = ["gabor.md"]
-Order = [:function]
+Order = [:type, :function]
 ```
 
 ## Functions
@@ -62,5 +66,6 @@ Order = [:function]
 load_gray2float
 cu_transfer_sqrt_arr
 cu_transfer
+cu_gabor_wavefront
 cu_get_reconst_xyprojection
 ```
