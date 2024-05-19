@@ -75,12 +75,15 @@ using Test
         # Test make_background function
         pathlist = ["./data/holo1.bmp", "./data/holo2.bmp"]
         background = ParticleHolography.make_background(pathlist; mode=:mean)
+        background2 = ParticleHolography.make_background(pathlist; mode=:mode)
 
         # Test return type
         @test typeof(background) == Array{Float64, 2}
+        @test typeof(background2) == Array{Float64, 2}
 
         # Test return size
         @test size(background) == (1024,1024)
+        @test size(background2) == (1024,1024)
     end
 
     # Test cu_connected_component_labeling function
