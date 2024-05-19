@@ -19,9 +19,14 @@ makedocs(;
         "What's inline holography?" => "whats_inline_holography.md",
         "Tutorials" => Any[
             "Gabor holography" => "tutorials/gabor.md",
-            "Phase retrieved holography" => "tutorials/pr.md",
-            "Particle handling" => "tutorials/particle.md",
-            "Record particle hologram" => "tutorials/record.md",
+            "Phase retrieval holography" => "tutorials/pr.md",
+            # "Particle handling" => "tutorials/particle.md",
+            # "Record particle hologram" => "tutorials/record.md",
+        ],
+        "Usage" => Any[
+            "Preprocessings" => "usage/preprocessings.md",
+            # "Volume reconstruction" => "usage/reconstruction.md",
+            # "Particle detection" => "usage/particle_detection.md",
         ],
         "Reference" => "reference.md",
     ],
