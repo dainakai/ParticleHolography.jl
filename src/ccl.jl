@@ -2,7 +2,11 @@ using CUDA
 using UUIDs
 using Random
 
-export cu_connected_component_labeling, count_labels, cu_find_valid_labels, extract_coordinates, get_bounding_rectangles, gen_particle_neighborhoods, update_particle_neighborhoods
+# Tested
+export cu_connected_component_labeling, count_labels, cu_find_valid_labels, get_bounding_rectangles
+
+# Not tested
+export gen_particle_neighborhoods, update_particle_neighborhoods
 
 # CUDA 8-way Connected Component Labelling
 # Please refer to: https://github.com/FolkeV/CUDA_CCL
