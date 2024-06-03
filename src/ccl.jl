@@ -6,7 +6,7 @@ using Random
 export cu_connected_component_labeling, count_labels, cu_find_valid_labels, get_bounding_rectangles
 
 # Not tested
-export gen_particle_neighborhoods, update_particle_neighborhoods
+export gen_particle_neighborhoods, update_particle_neighborhoods!, delete_duplicates!, finalize_particle_neighborhoods!
 
 # CUDA 8-way Connected Component Labelling
 # Please refer to: https://github.com/FolkeV/CUDA_CCL
@@ -240,7 +240,7 @@ function cu_find_valid_labels(labels::CuArray{UInt32, 2})
 end
 
 function get_bounding_rectangles(labels::Array{UInt32, 2}, valid_labels::Vector{Int64})
-    bounding_rectangles = []
+    bounding_rectangles = NTuple{4, Int}[]
     for label in valid_labels
         indices = findall(labels .== label)
         y_min = minimum([ci[1] for ci in indices])
@@ -254,22 +254,33 @@ end
 
 function gen_particle_neighborhoods(bounding_rectangles, slicenum)
     rng = MersenneTwister(1234)
-    formatted_output = Dict()
+    formatted_output = Dict{UUID, Vector{Int}}()
 
     for item in bounding_rectangles
         x_min, y_min, x_max, y_max = item
         uuid = uuid1(rng)
-        formatted_output[uuid.value] = [x_min, y_min, slicenum, x_max, y_max, slicenum]
+        formatted_output[uuid] = [x_min, y_min, slicenum, x_max, y_max, slicenum]
     end
 
     return formatted_output
 end
 
-function judge_overlap(rect1, rect2)
+function judge_overlap2d(rect1, rect2)
     x_min1, y_min1, x_max1, y_max1 = rect1
     x_min2, y_min2, x_max2, y_max2 = rect2
 
     if x_min1 < x_max2 && x_max1 > x_min2 && y_min1 < y_max2 && y_max1 > y_min2
+        return true
+    else
+        return false
+    end
+end
+
+function judge_overlap3d(rect1, rect2)
+    x_min1, y_min1, z_min1, x_max1, y_max1, z_max1 = rect1
+    x_min2, y_min2, z_min2, x_max2, y_max2, z_max2 = rect2
+
+    if x_min1 < x_max2 && x_max1 > x_min2 && y_min1 < y_max2 && y_max1 > y_min2 && z_min1 < z_max2 && z_max1 > z_min2
         return true
     else
         return false
@@ -288,30 +299,84 @@ function new_rect(rect1, rect2)
     return [x_min, y_min, x_max, y_max]
 end
 
-function update_particle_neighborhoods(particle_neighborhoods, bounding_rectangles, slicenum)
+function update_particle_neighborhoods!(particle_neighborhoods, bounding_rectangles, slicenum)
     rng = MersenneTwister(1234)
     
     for br in bounding_rectangles
-        br_overlap_flag = false
+        overlapflag = false
         for item in particle_neighborhoods
-            if judge_overlap(br, (item[2][1], item[2][2], item[2][4], item[2][5]))
-                br_overlap_flag = true
+            if judge_overlap2d(br, (item[2][1], item[2][2], item[2][4], item[2][5]))
                 newbr = new_rect(br, (item[2][1], item[2][2], item[2][4], item[2][5]))
-                item[1] = newbr[1]
-                item[2] = newbr[2]
-                item[4] = newbr[3]
-                item[5] = newbr[4]
+                item[2][1] = newbr[1]
+                item[2][2] = newbr[2]
+                item[2][4] = newbr[3]
+                item[2][5] = newbr[4]
                 
-                if slicenum < item[3]
-                    item[3] = slicenum
-                elseif slicenum > item[6]
-                    item[6] = slicenum
+                if slicenum < item[2][3]
+                    item[2][3] = slicenum
+                elseif slicenum > item[2][6]
+                    item[2][6] = slicenum
+                end
+
+                overlapflag = true
+            end
+        end
+        if !overlapflag
+            uuid = uuid1(rng)
+            particle_neighborhoods[uuid] = [br[1], br[2], slicenum, br[3], br[4], slicenum]
+        end
+    end
+
+    for item in particle_neighborhoods
+        if abs(item[2][1] - item[2][4]) == 1 && abs(item[2][2] - item[2][5]) == 1 && abs(item[2][3] - item[2][6]) == 1
+            delete!(particle_neighborhoods, item[1])
+        end
+    end
+
+    return nothing
+end
+
+function finalize_particle_neighborhoods!(particle_neighborhoods)
+    delete_duplicates!(particle_neighborhoods)
+    for item in particle_neighborhoods
+        if abs(item[2][3] - item[2][6]) == 1
+            delete!(particle_neighborhoods, item[1])
+        end
+        if abs(item[2][1] - item[2][4])/abs(item[2][2] - item[2][5]) > 3 || abs(item[2][1] - item[2][4])/abs(item[2][2] - item[2][5]) < 1/3
+            delete!(particle_neighborhoods, item[1])
+        end
+        if abs(item[2][1] - item[2][4]) * abs(item[2][2] - item[2][5]) < 10
+            delete!(particle_neighborhoods, item[1])
+        end
+    end
+
+    return nothing
+end
+
+function delete_duplicates!(particle_neighborhoods)
+    changed = false
+    for item in particle_neighborhoods
+        for item2 in particle_neighborhoods
+            if item != item2
+                if judge_overlap3d((item[2][1], item[2][2], item[2][3], item[2][4], item[2][5], item[2][6]), (item2[2][1], item2[2][2], item2[2][3], item2[2][4], item2[2][5], item2[2][6]))
+                    newbr = new_rect((item[2][1], item[2][2], item[2][4], item[2][5]), (item2[2][1], item2[2][2], item2[2][4], item2[2][5]))
+                    item[2][1] = newbr[1]
+                    item[2][2] = newbr[2]
+                    item[2][4] = newbr[3]
+                    item[2][5] = newbr[4]
+                    item[2][3] = min(item[2][3], item2[2][3])
+                    item[2][6] = max(item[2][6], item2[2][6])
+                    delete!(particle_neighborhoods, item2[1])
+                    changed = true
+                    break
                 end
             end
         end
-        if !br_overlap_flag
-            uuid = uuid1(rng)
-            particle_neighborhoods[uuid.value] = [br[1], br[2], slicenum, br[3], br[4], slicenum]
-        end
     end
+
+    if changed
+        delete_duplicates!(particle_neighborhoods)
+    end
+
+    return nothing
 end
