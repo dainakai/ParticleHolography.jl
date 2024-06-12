@@ -112,14 +112,14 @@ function cu_phase_retrieval_holo(holo1::CuArray{Float32,2}, holo2::CuArray{Float
 
     for _ in 1:priter
         # STEP1
-        light2 .= CUFFT.ifft(CUFFT.fftshift(CUFFT.fftshift(CUFFT.fft(light1)).*transfer.data))
+        light2 .= CUFFT.ifft(CUFFT.ifftshift(CUFFT.fftshift(CUFFT.fft(light1)).*transfer.data))
         phi2 .= angle.(light2)
 
         # STEP2
         light2 .= sqrtI2.*exp.(1.0im.*phi2)
 
         # STEP3
-        light1 .= CUFFT.ifft(CUFFT.fftshift(CUFFT.fftshift(CUFFT.fft(light2)).*invtransfer.data))
+        light1 .= CUFFT.ifft(CUFFT.ifftshift(CUFFT.fftshift(CUFFT.fft(light2)).*invtransfer.data))
         phi1 .= angle.(light1)
 
         # STEP4

@@ -187,7 +187,7 @@ end
 
 """
 function cu_connected_component_labeling(input_img)
-    output_img = cu(zeros(UInt32, size(input_img)))
+    output_img = CUDA.zeros(UInt32, size(input_img))
 
     height, width = size(input_img)
 
