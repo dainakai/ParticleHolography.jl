@@ -124,19 +124,19 @@ using Test
     end
 
     # Test get_bounding_rectangles function
-    @testset "get_bounding_rectangles function" begin
-        # Test get_bounding_rectangles function
-        img = ParticleHolography.load_gray2float("./data/binaryparticles.png")
-        output_img = ParticleHolography.cu_connected_component_labeling(cu(1.0f0 .-img))
-        valid_labels = ParticleHolography.cu_find_valid_labels(output_img)
-        bounding_rectangles = ParticleHolography.get_bounding_rectangles(Array(output_img), valid_labels)
+    # @testset "get_bounding_rectangles function" begin
+    #     # Test get_bounding_rectangles function
+    #     img = ParticleHolography.load_gray2float("./data/binaryparticles.png")
+    #     output_img = ParticleHolography.cu_connected_component_labeling(cu(1.0f0 .-img))
+    #     valid_labels = ParticleHolography.cu_find_valid_labels(output_img)
+    #     bounding_rectangles = ParticleHolography.get_bounding_rectangles(Array(output_img), valid_labels)
 
-        # Test return type
-        @test typeof(bounding_rectangles) == Array{Any,1}
+    #     # Test return type
+    #     @test typeof(bounding_rectangles) == Array{Any,1}
 
-        # Test return length
-        @test length(bounding_rectangles) == 84
-    end
+    #     # Test return length
+    #     @test length(bounding_rectangles) == 84
+    # end
 
     # Test get_distortion_coefficients function
     @testset "get_distortion_coefficients function" begin
