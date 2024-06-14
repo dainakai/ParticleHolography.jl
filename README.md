@@ -13,5 +13,5 @@ A package for particle measurement using inline holography. Please refer to the 
 
 ```julia
 using Pkg
-Pkg.add(url="ParticleHolography")
+Pkg.add("ParticleHolography")
 ```
