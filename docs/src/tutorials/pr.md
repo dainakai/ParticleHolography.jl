@@ -94,8 +94,8 @@ priter = 20 # Number of iterations of the Gerchberg-Saxton algorithm
 
 # Prepare the transfer functions
 d_sqr = cu_transfer_sqrt_arr(datlen, λ, Δx)
-d_tf = cu_transfer(z0, datlen, λ, d_sqr)
-d_slice = cu_transfer(Δz, datlen, λ, d_sqr)
+d_tf = cu_transfer(-z0, datlen, λ, d_sqr)
+d_slice = cu_transfer(-Δz, datlen, λ, d_sqr)
 d_pr = cu_transfer(prz, datlen, λ, d_sqr)
 d_pr_inv = cu_transfer(-prz, datlen, λ, d_sqr)
 
