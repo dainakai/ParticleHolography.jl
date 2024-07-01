@@ -30,7 +30,7 @@ Creates a low pass filter with a rectangular window. This can be multiplied with
 """
 function cu_rectangle_filter(prop_dist::AbstractFloat, wavlen::AbstractFloat, imglen::Int, pixel_picth::AbstractFloat)
     arr = CUDA.ones(Float32, (imglen, imglen))
-    maxi = 1/(sqrt(2.0)*wavlen) * imglen^2 * pixel_picth^2 / sqrt(4.0*prop_dist^2 + imglen^2 * pixel_picth^2)
+    maxi = 1/wavlen * imglen^2 * pixel_picth^2 / sqrt(4.0*prop_dist^2 + imglen^2 * pixel_picth^2)
     threads = (32,32)
     blocks = cld.((imglen, imglen), threads)
     @cuda threads=threads blocks=blocks _rect_filter!(arr, maxi, imglen)
@@ -65,8 +65,8 @@ Creates a low pass filter with a super Gaussian window. This can be multiplied w
 """
 function cu_super_gaussian_filter(prop_dist::AbstractFloat, wavlen::AbstractFloat, imglen::Int, pixel_picth::AbstractFloat)
     arr = CUDA.zeros(Float32, (imglen, imglen))
-    maxi = 1/(sqrt(2.0)*wavlen) * imglen^2 * pixel_picth^2 / sqrt(4.0*prop_dist^2 + imglen^2 * pixel_picth^2)
-    σ_x = maxi/(imglen*pixel_picth)/(0.25*log(2.0))^(1/6)
+    maxi = 1/wavlen * imglen^2 * pixel_picth^2 / sqrt(4.0*prop_dist^2 + imglen^2 * pixel_picth^2)
+    σ_x = maxi/(imglen*pixel_picth)/(2.0*log(2.0))^(1/6)
     threads = (32,32)
     blocks = cld.((imglen, imglen), threads)
     @cuda threads=threads blocks=blocks _super_gaussian_filter!(arr, σ_x, imglen, pixel_picth)

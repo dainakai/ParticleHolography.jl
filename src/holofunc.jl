@@ -10,7 +10,7 @@ function _cu_transfer_sqrt_arr!(Plane, datLen, wavLen, dx)
     x = (blockIdx().x-1)*blockDim().x + threadIdx().x
     y = (blockIdx().y-1)*blockDim().y + threadIdx().y
     if x <= datLen && y <= datLen
-        @inbounds Plane[x,y] = 1.0 - ((x-datLen/2)*wavLen/datLen/dx)^2 - ((y-datLen/2)*wavLen/datLen/dx)^2
+        @inbounds Plane[x,y] = 1.0 - ((x-datLen/2 - 1.0)*wavLen/datLen/dx)^2 - ((y-datLen/2 - 1.0)*wavLen/datLen/dx)^2
     end
     return nothing
 end
@@ -131,6 +131,25 @@ end
 
 ########################  Recontruction functions  ########################
 
+# function _ifft_and_abs(fftholo; lpf::CuLowPassFilter=nothing, return_type::Symbol=:Float32)
+#     if return_type in [:Float32, :Float64, :Float16, :N0f8]
+#         if lpf === nothing
+#             return fftholo |> CUFFT.ifftshift |> CUFFT.ifft .|> (x -> abs(x)^2) .|> (x -> clamp(x, 0, 1)) .|> x -> convert(return_type, x)
+#         else
+#             return fftholo |> (x -> x .* lpf.data) |> CUFFT.ifftshift |> CUFFT.ifft .|> (x -> abs(x)^2) .|> Float32
+#         end
+#     else
+#         if lpf === nothing
+#             return fftholo |> CUFFT.ifftshift |> CUFFT.ifft
+#         else
+#             return fftholo |> (x -> x .* lpf.data) |> CUFFT.ifftshift |> CUFFT.ifft
+#         end
+#     end
+
+
+# end
+
+
 """
     cu_get_reconst_vol(holo, transfer_front, transfer_dz, slices)
 
@@ -153,12 +172,11 @@ function cu_get_reconst_vol(wavefront::CuWavefront{ComplexF32}, transfer_front::
     fftholo = CUFFT.fftshift(CUFFT.fft(wavefront.data))
     fftholo .= fftholo.*transfer_front.data
 
-    vol[:,:,1] .= fftholo |> CUFFT.ifftshift |> CUFFT.ifft |> (x -> x .* conj.(x)) .|> abs .|> Float32
+    vol[:,:,1] .= fftholo |> CUFFT.ifftshift |> CUFFT.ifft .|> (x -> abs(x)^2) .|> Float32
 
     for i in 2:slices
         fftholo .= fftholo.*transfer_dz.data
-        # cu_rectangle_filter!(fftholo, 160000.0*5, 0.6328, 1024, 10.0)
-        vol[:,:,i] .= fftholo |> CUFFT.ifftshift |> CUFFT.ifft |> (x -> x .* conj.(x)) .|> abs .|> Float32
+        vol[:,:,i] .= fftholo |> CUFFT.ifftshift |> CUFFT.ifft .|> (x -> abs(x)^2) .|> Float32
     end
 
     return vol
