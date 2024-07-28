@@ -16,7 +16,7 @@ A package for particle measurement using inline holography.
 
 ## What you can do with ParticleHolography.jl
 
-- Perform inline holographic reconstruction using NVIDIA GPUs (CUDA.jl)
+- Volume reconstruction with inline holograms using NVIDIA GPUs (CUDA.jl)
 - Detect particles in reconstructed volumes
 - Visualize the particle trajectories
 

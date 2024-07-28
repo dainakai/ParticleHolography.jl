@@ -2,7 +2,7 @@
 
 Please refer to [Phase retrieval holography](@ref pr_explain) for the principles of this method. Below, we show the necessary procedures and an implementation example for reconstructing using this method.
 
-## Bundle adjustment
+## [Bundle adjustment](@id bundle_adjustment)
 
 We perform bundle adjustment [okatani](@cite) to correct for rotational and aberrational misalignments between the two camera views in the ``xy ``plane. First, for a pair of images with densely distributed features throughout the field of view, such as a glass plate with printed random dots, we create a vector map of displacement amounts (right figure below) by calculating the cross-correlation coefficients between neighboring batches between the two images, similar to Particle Image Velocimetry (PIV) [willert](@cite). This map represents the displacement of `img2` relative to the reference image `img1`. By determining the image transformation coefficients ``\bm{a}`` that make this map nearly zero throughout, alignment is achieved.
 
@@ -123,21 +123,6 @@ save("xyprojection_pr.png", Array(d_xyproj)) # Copy the d_xyproj to host memory 
        <p style="text-align:center;">Output xy projection image</p>
    </div>
 </div>
-```
-
-## Index
-
-```@index
-Pages = ["pr.md"]
-Order = [:function]
-```
-
-## Functions
-
-```@docs
-get_distortion_coefficients
-quadratic_distortion_correction
-cu_phase_retrieval_holo
 ```
 
 ## References

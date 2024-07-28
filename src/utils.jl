@@ -220,3 +220,11 @@ function make_background(pathlist::Vector{String}; mode=:mode)
         return background
     end
 end
+
+function pad_with_mean(img, padsize)
+    @assert padsize > size(img, 1) && padsize > size(img, 2) "Padsize should be larger than the image size. padsize: $padsize, img size: $(size(img))"
+    meanval = mean(img)
+    output = fill(meanval, (padsize, padsize))
+    output[div(padsize,2)-div(size(img,1),2)+1:div(padsize,2)-div(size(img,1),2)+size(img,1), div(padsize,2)-div(size(img,2),2)+1:div(padsize,2)-div(size(img,2),2)+size(img,2)] .= img
+    return output
+end
