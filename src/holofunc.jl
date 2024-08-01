@@ -80,7 +80,7 @@ Create a wavefront from single hologram `holo`. This is for Gabor holography. Th
 - `CuWavefront{ComplexF32}`: The wavefront created from the hologram. See [`CuWavefront`](@ref).
 """
 function cu_gabor_wavefront(holo::CuArray{Float32,2})
-    return CuWavefront(ComplexF32.(sqrt.(holo)))
+    return CuWavefront(ComplexF32.(sqrt.(holo) .+ 0.0im))
 end
 
 """
@@ -141,9 +141,9 @@ end
 
 function _ifft_and_abs(fftholo, return_type::Type)
     if return_type in [Float32, Float64, Float16]
-        return fftholo |> CUFFT.ifftshift |> CUFFT.ifft .|> (x -> abs(x)^2) .|> (x -> clamp(x, 0.0, 1.0)) .|> return_type
+        return fftholo |> CUFFT.ifftshift |> CUFFT.ifft .|> (x -> abs2(x)) .|> (x -> clamp(x, 0.0, 1.0)) .|> return_type
     elseif return_type == N0f8
-        return fftholo |> CUFFT.ifftshift |> CUFFT.ifft .|> (x -> abs(x)^2) .|> (x -> clamp(x, 0.0, 1.0)) .|> _normedfloat_to_N0f8
+        return fftholo |> CUFFT.ifftshift |> CUFFT.ifft .|> (x -> abs2(x)) .|> (x -> clamp(x, 0.0, 1.0)) .|> _normedfloat_to_N0f8
     else
         throw(ArgumentError("return_type must be Subtype of AbstractFloat or N0f8. Got $return_type"))
     end
