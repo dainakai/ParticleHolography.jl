@@ -21,7 +21,6 @@ makedocs(;
             "Gabor holography" => "tutorials/gabor.md",
             "Phase retrieval holography" => "tutorials/pr.md",
             "Particle handling" => "tutorials/particle.md",
-            "Record particle hologram" => "tutorials/record.md",
         ],
         "Usage" => Any[
             "Preprocessings" => "usage/preprocessings.md",

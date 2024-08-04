@@ -1,7 +1,11 @@
 # [Preprocessings](@id preprocessings)
 
 ## Read images
+Use the `load_gray2float` function to read grayscale hologram images.
 
+```@docs
+load_gray2float
+```
 
 
 ## Background removal
@@ -24,6 +28,3 @@ The `mode` argument can be set to `:mean` or `:mode`. The default is `:mode`.
 ```@docs
 make_background
 ```
-
-## Phase retrieval
-

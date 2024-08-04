@@ -151,7 +151,7 @@ end
 
 
 """
-    cu_get_reconst_vol(holo, transfer_front, transfer_dz, slices)
+    cu_get_reconst_vol(holo, transfer_front, transfer_dz, slices, return_type)
 
 Reconstruct the observation volume from the `wavefront` using the transfer functions `transfer_front` and `transfer_dz`. `transfer_front` propagates the wavefront to the front of the volume, and `transfer_dz` propagates the wavefront between the slices. `slices` is the number of slices in the volume.
 
@@ -266,7 +266,7 @@ function _cu_get_xy_projection_from_vol!(Plane, vol, datlen, slices)
 end
 
 """
-    cu_get_reconst_vol_and_xyprojection(wavefront, transfer_front, transfer_dz, slices)
+    cu_get_reconst_vol_and_xyprojection(wavefront, transfer_front, transfer_dz, slices, return_type)
 
 Reconstruct the observation volume from the `wavefront` and get the XY projection of the volume using the transfer functions `transfer_front` and `transfer_dz`. `transfer_front` propagates the wavefront to the front of the volume, and `transfer_dz` propagates the wavefront between the slices. `slices` is the number of slices in the volume.
 
