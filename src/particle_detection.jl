@@ -3,6 +3,9 @@ using FixedPointNumbers
 using Statistics
 using ImageFiltering
 using HistogramThresholding
+using UUIDs
+
+export particle_bounding_boxes, particle_coordinates, particle_coor_diams
 
 function _dilate_3d!(dilated, vol, datlen, slices)
     x = (blockIdx().x - 1) * blockDim().x + threadIdx().x
@@ -71,7 +74,7 @@ Calculates the Tamura coefficient of an array. The Tamura coefficient is defined
 # Returns
 - `Float32`: The Tamura coefficient of the array.
 """
-function tamura(arr::Array{Float32,2})
+function tamura(arr::AbstractArray{<:AbstractFloat,2})
     return std(arr)/mean(arr)
 end
 
@@ -103,19 +106,19 @@ Calculates the coordinates of the particles in the reconstructed volume with the
 - `particle_bbs::Dict{UUID, Vector{Int}}`: The bounding boxes of the particles.
 - `d_vol::CuArray{N0f8, 3}`: The reconstructed volume.
 - `depth_metrics::Function = tamura`: The function that calculates the depth profile of the particles.
-- `profile_smoothing_kernel::ImageFiltering.Kernel = Kernel.gaussian(5,)`: The kernel used for smoothing the depth profile.
+- `profile_smoothing_kernel = Kernel.gaussian((5,))`: The kernel used for smoothing the depth profile.
 
 # Returns
 - `Dict{UUID, Vector{Float32}}`: The coordinates of the particles.
 """
-function particle_coordinates(particle_bbs::Dict{UUID, Vector{Int}}, d_vol::CuArray{N0f8, 3}; depth_metrics::Function = tamura, profile_smoothing_kernel::ImageFiltering.Kernel = Kernel.gaussian(5,))
+function particle_coordinates(particle_bbs::Dict{UUID, Vector{Int}}, d_vol::CuArray{N0f8, 3}; depth_metrics::Function = tamura, profile_smoothing_kernel = Kernel.gaussian((5,)))
     particle_coords = Dict{UUID, Vector{Float32}}()
     for (key, value) in particle_bbs
-        @views subvol = d_vol[value[2]:value[5], value[1]:value[4], value[3]:value[6]]
+        @views subvol = Float32.(d_vol[value[2]:value[5], value[1]:value[4], value[3]:value[6]])
         zmetric = depth_profile(depth_metrics, subvol)
         imfilter!(zmetric, zmetric, profile_smoothing_kernel)
         z = argmax(zmetric)
-        (x, y) = getcenterfromslice(subvol[:,:,z])
+        (x, y) = getcenterfromslice(Array(subvol[:,:,z]))
         particle_coords[key] = [x + value[1] - 1, y + value[2] - 1, z + value[3] - 1]
     end
     return particle_coords
@@ -137,29 +140,29 @@ Calculates the coordinates and diameters of the particles in the reconstructed v
 - `d_vol::CuArray{N0f8, 3}`: The reconstructed volume.
 - `d_lpf_vol::CuArray{N0f8, 3} = nothing`: The low pass filtered volume.
 - `depth_metrics::Function = tamura`: The function that calculates the depth profile of the particles.
-- `profile_smoothing_kernel::ImageFiltering.Kernel = Kernel.gaussian(5,)`: The kernel used for smoothing the depth profile.
+- `profile_smoothing_kernel = Kernel.gaussian((5,))`: The kernel used for smoothing the depth profile.
 - `diameter_metrics::Function = equivalent_diameter`: The function that calculates the diameter of the particles.
 
 # Returns
 - `Dict{UUID, Vector{Float32}}`: The coordinates and diameters of the particles.
 """
-function particle_coor_diams(particle_bbs::Dict{UUID, Vector{Int}}, d_vol::CuArray{N0f8, 3}; d_lpf_vol::CuArray{N0f8, 3} = nothing, depth_metrics::Function = tamura, profile_smoothing_kernel::ImageFiltering.Kernel = Kernel.gaussian(5,), diameter_metrics::Function = equivalent_diameter)
+function particle_coor_diams(particle_bbs::Dict{UUID, Vector{Int}}, d_vol::CuArray{N0f8, 3}; d_lpf_vol::CuArray{N0f8, 3} = nothing, depth_metrics::Function = tamura, profile_smoothing_kernel = Kernel.gaussian((5,)), diameter_metrics::Function = equivalent_diameter)
     particle_coords = Dict{UUID, Vector{Float32}}()
     for (key, value) in particle_bbs
-        @views subvol = d_vol[value[2]:value[5], value[1]:value[4], value[3]:value[6]]
+        @views subvol = Float32.(d_vol[value[2]:value[5], value[1]:value[4], value[3]:value[6]])
         if !isnothing(d_lpf_vol)
-            @views subvol_lpf = d_lpf_vol[value[2]:value[5], value[1]:value[4], value[3]:value[6]]
+            @views subvol_lpf = Float32.(d_lpf_vol[value[2]:value[5], value[1]:value[4], value[3]:value[6]])
             zmetric = depth_profile(depth_metrics, subvol_lpf)
             imfilter!(zmetric, zmetric, profile_smoothing_kernel)
             z = argmax(zmetric)
-            (x, y) = getcenterfromslice(subvol_lpf[:,:,z])
+            (x, y) = getcenterfromslice(Array(subvol_lpf[:,:,z]))
             diam = diameter_metrics(subvol[:,:,z])
             particle_coords[key] = [x + value[1] - 1, y + value[2] - 1, z + value[3] - 1, diam]
         else
             zmetric = depth_profile(depth_metrics, subvol)
             imfilter!(zmetric, zmetric, profile_smoothing_kernel)
             z = argmax(zmetric)
-            (x, y) = getcenterfromslice(subvol[:,:,z])
+            (x, y) = getcenterfromslice(Array(subvol[:,:,z]))
             diam = diameter_metrics(subvol[:,:,z])
             particle_coords[key] = [x + value[1] - 1, y + value[2] - 1, z + value[3] - 1, diam]
         end

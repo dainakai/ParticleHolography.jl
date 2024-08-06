@@ -1,6 +1,7 @@
 # Reconstruction
 
-必要な前処理が完了し、`ParticleHolography.CuWaveFront` 型の配列 `d_wavefront` が得られたとします。この配列を用いて、観測体積の３次元再構成を行います。[Gabor holography](@ref gabor_reconst)ではすでに観測体積の光軸方向の投影画像を取得する関数について説明しましたが、その他にも必要な情報に応じて以下の再構成用関数を選択することができます。
+We assume that the necessary preprocessing has been completed and an array of type `ParticleHolography.CuWaveFront`, `d_wavefront`, has been obtained. Using this array, we perform a 3D reconstruction of the observed volume. In [Gabor holography](@ref gabor_reconst), we have already described the functions for obtaining the projection images in the optical axis direction of the observed volume. In addition to this, depending on the required information, you can select the following reconstruction functions.
+
 
 ```@docs
 cu_get_reconst_xyprojection
