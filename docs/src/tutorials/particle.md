@@ -50,8 +50,9 @@ particle_coords = particle_coordinates(particle_bbs, d_vol)
 
 ## Scatter plotting
 
+## Particle pairing
 
-
+## Trajectory plotting
 
 
 ## References
