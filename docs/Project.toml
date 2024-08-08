@@ -1,5 +1,6 @@
 [deps]
 Documenter = "e30172f5-a6a5-5a46-863b-614d45cd2de4"
 DocumenterCitations = "daee34ce-89f3-4625-b898-19384cb65244"
+JSON = "682c06a0-de6a-54ab-a142-c8b1cf79cde6"
 LiveServer = "16fef848-5104-11e9-1b77-fb7a48bbb589"
 ParticleHolography = "b8f7f481-73e0-42c6-b6bd-c66d3b4942cc"

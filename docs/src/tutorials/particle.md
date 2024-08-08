@@ -46,14 +46,81 @@ d_bin_vol = d_vol .<= threshold
 
 particle_bbs = particle_bounding_boxes(d_bin_vol)
 particle_coords = particle_coordinates(particle_bbs, d_vol)
+
+# Save the particle coordinates
+dictsave("particles.json", particle_coords)
 ```
 
 ## Scatter plotting
 
+Let's plot the detected particles at each time point as a scatter plot. Since the correspondence of particles between time-series frames is still unknown at this point, we'll plot the particles at each time point in different colors. The plot recipe [`particleplot`](@ref particleplot) provided by ParticleHolography.jl is a simple arrangement of `Plots.scatter()`, but please note that there are differences in how the coordinate axes are handled.
+
+```julia
+using ParticleHolography
+using Plots
+using Glob
+
+files = glob("savejson_lpf4_priter6_th24/*.json")[1:50]
+
+colors = cgrad(:viridis)[LinRange(0, 1, length(files))]
+plot()
+for (idx, file) in enumerate(files)
+    data = dictload(file)
+    particleplot!(data, legend = false, scaling=(10.0, 10.0, -100.0), shift=(0.0, 0.0, 1e5), color=colors[idx], xlabel="x [µm]", ylabel="z [µm]", zlabel="y [µm]", xlim=(0,10240), ylim=(0,1e5), zlim=(0,10240))
+end
+
+plot!()
+```
+
+![Detected particles](../assets/particleplot.png)
+
 ## Particle pairing
+
+While overlaying detected particles from each time series creates an impactful and attractive image, what's truly crucial for many is understanding the correspondence of particle positions between time series frames. In other words, which particle in one frame corresponds to which in the next? When particle density is relatively low, a nearest neighbor approach suffices. However, as density increases, more advanced techniques become necessary. That said, particle tracking velocimetry (PTV) methods for extremely high particle densities, such as those described by [schanz](@cite), are unnecessary in our context. This is because hologram reconstruction becomes challenging when particle image areas exceed 20% of the x-y projection of the reconstructed image (refer to [Gabor holography](@ref gabor_reconst)). ParticleHolography.jl employs an improved version of Labonté's algorithm [ohmi, labonte](@cite) for particle pairing.
+
+Labonté's algorithm elucidates the correspondence between particles in two consecutive time frames. In ParticleHolography.jl, this relationship is represented as a directed graph through the [`Labonte`](@ref Labonte) implementation. To track particles across three or more consecutive frames and obtain all trajectories, we combine these directed graphs and enumerate all paths from each starting point to each endpoint. The functions [`enum_edge`](@ref enum_edge) and [`append_path!`](@ref append_path!) perform these operations.
+
+```julia
+using ParticleHolography
+using Glob
+
+# Load the particle coordinates
+files = glob("savejson_lpf4_priter6_th24/*.json")[1:5]
+
+# Convert to dictionary with UUID keys and Float64 values
+dicts = ParticleHolography.dictload.(files)
+
+graphs = [Labonte(dict1, dict2) for (dict1, dict2) in zip(dicts[1:end-1], dicts[2:end])]
+
+paths = ParticleHolography.enum_edge(graphs[1])
+
+for graph in graphs[2:end]
+    append_path!(paths, graph)
+end
+```
+
+```
+julia> paths[1]
+5-element Vector{Base.UUID}:
+ UUID("02defbf6-401e-11ef-1a7e-43a2532b2fa8")
+ UUID("078214ac-401e-11ef-1a7e-43a2532b2fa8")
+ UUID("0c0dcbb2-401e-11ef-1a7e-43a2532b2fa8")
+ UUID("109fd490-401e-11ef-1a7e-43a2532b2fa8")
+ UUID("15196216-401e-11ef-1a7e-43a2532b2fa8")
+```
 
 ## Trajectory plotting
 
+Let's visualize the trajectories. We'll draw the trajectories using `paths` obtained in the previous section and `fulldict` obtained from the [`gen_fulldict`](@ref gen_fulldict) function. Particles considered identical are drawn in the same color, while different trajectories are drawn in different colors. As there are only as many colors as there are in the palette, colors will be reused if there are more trajectories than the number of colors in the palette.
+
+```julia
+files = glob("savejson_lpf4_priter6_th24/*.json")[1:50]
+fulldict = gen_fulldict(files)
+
+trajectoryplot(paths, fulldict)
+```
+
+![Particle trajectories](../assets/trajectory.png)
 
 ## References
 
