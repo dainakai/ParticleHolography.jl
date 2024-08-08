@@ -1,16 +1,17 @@
 using CUDA
 using CUDA.CUFFT
+using FixedPointNumbers
 
 export cu_transfer_sqrt_arr, cu_transfer, cu_gabor_wavefront, cu_phase_retrieval_holo, cu_get_reconst_vol, cu_get_reconst_xyprojection, cu_get_reconst_vol_and_xyprojection
 
 # Not tested
-export cu_get_reconst_complex_vol, cu_get_reconst_complex_vol, cu_get_reconst_xyprojection, cu_get_reconst_vol_and_xyprojection, cu_get_reconst_vol_lpf, cu_get_reconst_complex_vol_lpf
+export cu_get_reconst_complex_vol
 
 function _cu_transfer_sqrt_arr!(Plane, datLen, wavLen, dx)
     x = (blockIdx().x-1)*blockDim().x + threadIdx().x
     y = (blockIdx().y-1)*blockDim().y + threadIdx().y
     if x <= datLen && y <= datLen
-        @inbounds Plane[x,y] = 1.0 - ((x-datLen/2)*wavLen/datLen/dx)^2 - ((y-datLen/2)*wavLen/datLen/dx)^2
+        @inbounds Plane[x,y] = 1.0 - ((x-datLen/2 - 1.0)*wavLen/datLen/dx)^2 - ((y-datLen/2 - 1.0)*wavLen/datLen/dx)^2
     end
     return nothing
 end
@@ -79,7 +80,7 @@ Create a wavefront from single hologram `holo`. This is for Gabor holography. Th
 - `CuWavefront{ComplexF32}`: The wavefront created from the hologram. See [`CuWavefront`](@ref).
 """
 function cu_gabor_wavefront(holo::CuArray{Float32,2})
-    return CuWavefront(ComplexF32.(sqrt.(holo)))
+    return CuWavefront(ComplexF32.(sqrt.(holo) .+ 0.0im))
 end
 
 """
@@ -129,10 +130,28 @@ function cu_phase_retrieval_holo(holo1::CuArray{Float32,2}, holo2::CuArray{Float
     return CuWavefront(light1)
 end
 
+
+
+
 ########################  Recontruction functions  ########################
 
+function _normedfloat_to_N0f8(val::AbstractFloat)
+    return reinterpret(N0f8, round(UInt8, clamp(val, 0.0, 1.0)*255))
+end
+
+function _ifft_and_abs(fftholo, return_type::Type)
+    if return_type in [Float32, Float64, Float16]
+        return fftholo |> CUFFT.ifftshift |> CUFFT.ifft .|> (x -> abs2(x)) .|> (x -> clamp(x, 0.0, 1.0)) .|> return_type
+    elseif return_type == N0f8
+        return fftholo |> CUFFT.ifftshift |> CUFFT.ifft .|> (x -> abs2(x)) .|> (x -> clamp(x, 0.0, 1.0)) .|> _normedfloat_to_N0f8
+    else
+        throw(ArgumentError("return_type must be Subtype of AbstractFloat or N0f8. Got $return_type"))
+    end
+end
+
+
 """
-    cu_get_reconst_vol(holo, transfer_front, transfer_dz, slices)
+    cu_get_reconst_vol(holo, transfer_front, transfer_dz, slices, return_type)
 
 Reconstruct the observation volume from the `wavefront` using the transfer functions `transfer_front` and `transfer_dz`. `transfer_front` propagates the wavefront to the front of the volume, and `transfer_dz` propagates the wavefront between the slices. `slices` is the number of slices in the volume.
 
@@ -141,24 +160,24 @@ Reconstruct the observation volume from the `wavefront` using the transfer funct
 - `transfer_front::CuTransfer{ComplexF32}`: The transfer function to propagate the wavefront to the front of the volume. See [`CuTransfer`](@ref).
 - `transfer_dz::CuTransfer{ComplexF32}`: The transfer function to propagate the wavefront between the slices.
 - `slices::Int`: The number of slices in the volume.
+- `return_type::Type`: The return type of the reconstructed volume. Default is `N0f8`.
 
 # Returns
-- `CuArray{Float32,3}`: The reconstructed intensity volume.
+- `CuArray{return_type,3}`: The reconstructed intensity volume.
 """
-function cu_get_reconst_vol(wavefront::CuWavefront{ComplexF32}, transfer_front::CuTransfer{ComplexF32}, transfer_dz::CuTransfer{ComplexF32}, slices::Int) 
+function cu_get_reconst_vol(wavefront::CuWavefront{ComplexF32}, transfer_front::CuTransfer{ComplexF32}, transfer_dz::CuTransfer{ComplexF32}, slices::Int, return_type::Type=N0f8) 
     @assert size(wavefront.data) == size(transfer_front.data) == size(transfer_dz.data) "All arrays must have the same size. Got $(size(wavefront.data)), $(size(transfer_front.data)), $(size(transfer_dz.data))."
 
-    vol = CuArray{Float32}(undef, size(wavefront.data)..., slices)
+    vol = CuArray{return_type}(undef, size(wavefront.data)..., slices)
     
     fftholo = CUFFT.fftshift(CUFFT.fft(wavefront.data))
     fftholo .= fftholo.*transfer_front.data
 
-    vol[:,:,1] .= fftholo |> CUFFT.ifftshift |> CUFFT.ifft |> (x -> x .* conj.(x)) .|> abs .|> Float32
+    vol[:,:,1] .= _ifft_and_abs(fftholo, return_type)
 
     for i in 2:slices
         fftholo .= fftholo.*transfer_dz.data
-        # cu_rectangle_filter!(fftholo, 160000.0*5, 0.6328, 1024, 10.0)
-        vol[:,:,i] .= fftholo |> CUFFT.ifftshift |> CUFFT.ifft |> (x -> x .* conj.(x)) .|> abs .|> Float32
+        vol[:,:,i] .= _ifft_and_abs(fftholo, return_type)
     end
 
     return vol
@@ -247,7 +266,7 @@ function _cu_get_xy_projection_from_vol!(Plane, vol, datlen, slices)
 end
 
 """
-    cu_get_reconst_vol_and_xyprojection(wavefront, transfer_front, transfer_dz, slices)
+    cu_get_reconst_vol_and_xyprojection(wavefront, transfer_front, transfer_dz, slices, return_type)
 
 Reconstruct the observation volume from the `wavefront` and get the XY projection of the volume using the transfer functions `transfer_front` and `transfer_dz`. `transfer_front` propagates the wavefront to the front of the volume, and `transfer_dz` propagates the wavefront between the slices. `slices` is the number of slices in the volume.
 
@@ -256,166 +275,25 @@ Reconstruct the observation volume from the `wavefront` and get the XY projectio
 - `transfer_front::CuTransfer{ComplexF32}`: The transfer function to propagate the wavefront to the front of the volume. See [`CuTransfer`](@ref).
 - `transfer_dz::CuTransfer{ComplexF32}`: The transfer function to propagate the wavefront between the slices.
 - `slices::Int`: The number of slices in the volume.
+- `return_type::Type`: The return type of the reconstructed volume. Default is `N0f8`.
 
 # Returns
-- `CuArray{Float32,3}`: The reconstructed volume.
+- `CuArray{return_type,3}`: The reconstructed volume.
 - `CuArray{Float32,2}`: The XY projection of the reconstructed volume.
 """
-function cu_get_reconst_vol_and_xyprojection(wavefront::CuWavefront{ComplexF32}, transfer_front::CuTransfer{ComplexF32}, transfer_dz::CuTransfer{ComplexF32}, slices::Int)
+function cu_get_reconst_vol_and_xyprojection(wavefront::CuWavefront{ComplexF32}, transfer_front::CuTransfer{ComplexF32}, transfer_dz::CuTransfer{ComplexF32}, slices::Int, return_type::Type=N0f8)
     @assert size(wavefront.data) == size(transfer_front.data) == size(transfer_dz.data) "All arrays must have the same size. Got $(size(wavefront.data)), $(size(transfer_front.data)), $(size(transfer_dz.data))."
 
-    vol = CuArray{Float32}(undef, size(wavefront.data)..., slices)
+    vol = CuArray{return_type}(undef, size(wavefront.data)..., slices)
     
     fftholo = CUFFT.fftshift(CUFFT.fft(wavefront.data))
     fftholo .= fftholo.*transfer_front.data
 
-    vol[:,:,1] .= fftholo |> CUFFT.ifftshift |> CUFFT.ifft |> (x -> x .* conj.(x)) .|> abs .|> Float32
+    vol[:,:,1] .= _ifft_and_abs(fftholo, return_type)
 
     for i in 2:slices
         fftholo .= fftholo.*transfer_dz.data
-        vol[:,:,i] .= fftholo |> CUFFT.ifftshift |> CUFFT.ifft |> (x -> x .* conj.(x)) .|> abs .|> Float32
-    end
-
-    xyprojection = CuArray{Float32}(undef, size(wavefront.data)...)
-    threads = (32, 32)
-    blocks = cld.((size(wavefront.data)[1], size(wavefront.data)[2]), threads)
-    @cuda threads=threads blocks=blocks _cu_get_xy_projection_from_vol!(xyprojection, vol, size(wavefront.data, 1), slices)
-    
-    return vol, xyprojection
-end
-
-########################  Recontruction functions with low pass filter  ########################
-
-"""
-    cu_get_reconst_vol(holo, transfer_front, transfer_dz, slices)
-
-Reconstruct the observation volume from the `wavefront` using the transfer functions `transfer_front` and `transfer_dz`. `transfer_front` propagates the wavefront to the front of the volume, and `transfer_dz` propagates the wavefront between the slices. `slices` is the number of slices in the volume.
-
-# Arguments
-- `wavefront::CuArray{ComplexF32,2}`: The wavefront to reconstruct. In Gabor's holography, this is the square root of the hologram.
-- `transfer_front::CuTransfer{ComplexF32}`: The transfer function to propagate the wavefront to the front of the volume. See [`CuTransfer`](@ref).
-- `transfer_dz::CuTransfer{ComplexF32}`: The transfer function to propagate the wavefront between the slices.
-- `slices::Int`: The number of slices in the volume.
-- `lpf::CuLowPassFilter{Float32}`: The low pass filter to apply to the reconstructed volume.
-
-# Returns
-- `CuArray{Float32,3}`: The reconstructed intensity volume.
-"""
-function cu_get_reconst_vol_lpf(wavefront::CuWavefront{ComplexF32}, transfer_front::CuTransfer{ComplexF32}, transfer_dz::CuTransfer{ComplexF32}, slices::Int, lpf::CuLowPassFilter{Float32})
-    @assert size(wavefront.data) == size(transfer_front.data) == size(transfer_dz.data) "All arrays must have the same size. Got $(size(wavefront.data)), $(size(transfer_front.data)), $(size(transfer_dz.data))."
-
-    vol = CuArray{Float32}(undef, size(wavefront.data)..., slices)
-    
-    fftholo = CUFFT.fftshift(CUFFT.fft(wavefront.data))
-    fftholo .= fftholo.*transfer_front.data
-
-    vol[:,:,1] .= fftholo |> (x -> x .* lpf.data) |> CUFFT.ifftshift |> CUFFT.ifft |> (x -> x .* conj.(x)) .|> abs .|> Float32
-
-    for i in 2:slices
-        fftholo .= fftholo.*transfer_dz.data
-        vol[:,:,i] .= fftholo |> (x -> x .* lpf.data) |> CUFFT.ifftshift |> CUFFT.ifft |> (x -> x .* conj.(x)) .|> abs .|> Float32
-    end
-
-    return vol
-end
-
-"""
-    cu_get_reconst_complex_vol(holo, transfer_front, transfer_dz, slices)
-
-Reconstruct the observation volume from the `wavefront` using the transfer functions `transfer_front` and `transfer_dz` and return the complex amplitude volume. `transfer_front` propagates the wavefront to the front of the volume, and `transfer_dz` propagates the wavefront between the slices. `slices` is the number of slices in the volume.
-
-# Arguments
-- `wavefront::CuArray{ComplexF32,2}`: The wavefront to reconstruct. In Gabor's holography, this is the square root of the hologram.
-- `transfer_front::CuTransfer{ComplexF32}`: The transfer function to propagate the wavefront to the front of the volume. See [`CuTransfer`](@ref).
-- `transfer_dz::CuTransfer{ComplexF32}`: The transfer function to propagate the wavefront between the slices.
-- `slices::Int`: The number of slices in the volume.
-- `lpf::CuLowPassFilter{Float32}`: The low pass filter to apply to the reconstructed volume.
-
-# Returns
-- `CuArray{ComplexF32,3}`: The reconstructed complex amplitude volume.
-"""
-function cu_get_reconst_complex_vol_lpf(wavefront::CuWavefront{ComplexF32}, transfer_front::CuTransfer{ComplexF32}, transfer_dz::CuTransfer{ComplexF32}, slices::Int, lpf::CuLowPassFilter{Float32})
-    @assert size(wavefront.data) == size(transfer_front.data) == size(transfer_dz.data) "All arrays must have the same size. Got $(size(wavefront.data)), $(size(transfer_front.data)), $(size(transfer_dz.data))."
-
-    vol = CuArray{ComplexF32}(undef, size(wavefront.data)..., slices)
-    
-    fftholo = CUFFT.fftshift(CUFFT.fft(wavefront.data))
-    fftholo .= fftholo.*transfer_front.data
-
-    vol[:,:,1] .= fftholo |> (x -> x .* lpf.data) |> CUFFT.ifftshift |> CUFFT.ifft
-
-    for i in 2:slices
-        fftholo .= fftholo.*transfer_dz.data
-        vol[:,:,i] .= fftholo |> (x -> x .* lpf.data) |> CUFFT.ifftshift |> CUFFT.ifft
-    end
-
-    return vol
-end
-
-"""
-    cu_get_reconst_xyprojectin(wavefront, transfer_front, transfer_dz, slices)
-
-Get the XY projection of the reconstructed volume from the `wavefront` using the transfer functions `transfer_front` and `transfer_dz`. `transfer_front` propagates the wavefront to the front of the volume, and `transfer_dz` propagates the wavefront between the slices. `slices` is the number of slices in the volume.
-
-# Arguments
-- `wavefront::CuWavefront{ComplexF32}`: The wavefront to reconstruct. In Gabor's holography, this is the square root of the hologram.
-- `transfer_front::CuTransfer{ComplexF32}`: The transfer function to propagate the wavefront to the front of the volume. See [`CuTransfer`](@ref).
-- `transfer_dz::CuTransfer{ComplexF32}`: The transfer function to propagate the wavefront between the slices.
-- `slices::Int`: The number of slices in the volume.
-- `lpf::CuLowPassFilter{Float32}`: The low pass filter to apply to the reconstructed volume.
-
-# Returns
-- `CuArray{Float32,2}`: The XY projection of the reconstructed volume.
-"""
-function cu_get_reconst_xyprojection_lpf(wavefront::CuWavefront{ComplexF32}, transfer_front::CuTransfer{ComplexF32}, transfer_dz::CuTransfer{ComplexF32}, slices::Int, lpf::CuLowPassFilter{Float32}) 
-    @assert size(wavefront.data) == size(transfer_front.data) == size(transfer_dz.data) "All arrays must have the same size. Got $(size(wavefront.data)), $(size(transfer_front.data)), $(size(transfer_dz.data))."
-    
-    proj = CuArray{Float32}(undef, size(wavefront.data)...)
-    projtmp = CuArray{Float32}(undef, size(wavefront.data)...)
-
-    fftholo = CUFFT.fftshift(CUFFT.fft(wavefront.data))
-    fftholo .= fftholo.*transfer_front.data
-
-    proj .= fftholo |> (x -> x .* lpf.data) |> CUFFT.ifftshift |> CUFFT.ifft |> (x -> x .* conj.(x)) .|> abs .|> Float32
-
-    for i in 2:slices
-        fftholo .= fftholo.*transfer_dz.data
-        projtmp .= fftholo |> (x -> x .* lpf.data) |> CUFFT.ifftshift |> CUFFT.ifft |> (x -> x .* conj.(x)) .|> abs .|> Float32 
-        proj .= CUDA.min.(proj, projtmp)
-    end
-
-    return proj
-end
-
-"""
-    cu_get_reconst_vol_and_xyprojection(wavefront, transfer_front, transfer_dz, slices, lpf)
-
-Reconstruct the observation volume from the `wavefront` and get the XY projection of the volume using the transfer functions `transfer_front` and `transfer_dz`. `transfer_front` propagates the wavefront to the front of the volume, and `transfer_dz` propagates the wavefront between the slices. `slices` is the number of slices in the volume.
-
-# Arguments
-- `wavefront::CuWavefront{ComplexF32}`: The wavefront to reconstruct. In Gabor's holography, this is the square root of the hologram.
-- `transfer_front::CuTransfer{ComplexF32}`: The transfer function to propagate the wavefront to the front of the volume. See [`CuTransfer`](@ref).
-- `transfer_dz::CuTransfer{ComplexF32}`: The transfer function to propagate the wavefront between the slices.
-- `slices::Int`: The number of slices in the volume.
-- `lpf::CuLowPassFilter{Float32}`: The low pass filter to apply to the reconstructed volume.
-
-# Returns
-- `CuArray{Float32,3}`: The reconstructed volume.
-- `CuArray{Float32,2}`: The XY projection of the reconstructed volume.
-"""
-function cu_get_reconst_vol_and_xyprojection_lpf(wavefront::CuWavefront{ComplexF32}, transfer_front::CuTransfer{ComplexF32}, transfer_dz::CuTransfer{ComplexF32}, slices::Int, lpf::CuLowPassFilter{Float32})
-    @assert size(wavefront.data) == size(transfer_front.data) == size(transfer_dz.data) "All arrays must have the same size. Got $(size(wavefront.data)), $(size(transfer_front.data)), $(size(transfer_dz.data))."
-
-    vol = CuArray{Float32}(undef, size(wavefront.data)..., slices)
-    
-    fftholo = CUFFT.fftshift(CUFFT.fft(wavefront.data))
-    fftholo .= fftholo.*transfer_front.data
-
-    vol[:,:,1] .= fftholo |> (x -> x .* lpf.data) |> CUFFT.ifftshift |> CUFFT.ifft |> (x -> x .* conj.(x)) .|> abs .|> Float32
-
-    for i in 2:slices
-        fftholo .= fftholo.*transfer_dz.data
-        vol[:,:,i] .= fftholo |> (x -> x .* lpf.data) |> CUFFT.ifftshift |> CUFFT.ifft |> (x -> x .* conj.(x)) .|> abs .|> Float32
+        vol[:,:,i] .= _ifft_and_abs(fftholo, return_type)
     end
 
     xyprojection = CuArray{Float32}(undef, size(wavefront.data)...)

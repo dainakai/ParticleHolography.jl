@@ -20,13 +20,14 @@ makedocs(;
         "Tutorials" => Any[
             "Gabor holography" => "tutorials/gabor.md",
             "Phase retrieval holography" => "tutorials/pr.md",
-            # "Particle handling" => "tutorials/particle.md",
-            # "Record particle hologram" => "tutorials/record.md",
+            "Particle handling" => "tutorials/particle.md",
         ],
         "Usage" => Any[
             "Preprocessings" => "usage/preprocessings.md",
-            # "Volume reconstruction" => "usage/reconstruction.md",
-            # "Particle detection" => "usage/particle_detection.md",
+            "Volume reconstruction" => "usage/reconstruction.md",
+            "Particle detection" => "usage/particle_detection.md",
+            "Particle tracking" => "usage/particle_tracking.md",
+            "Types" => "usage/types.md",
         ],
         "Reference" => "reference.md",
     ],

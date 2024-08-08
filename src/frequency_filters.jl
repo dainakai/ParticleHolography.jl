@@ -1,6 +1,6 @@
 using CUDA
 
-export cu_rectangle_filter, cu_super_gaussian_filter
+export cu_rectangle_filter, cu_super_gaussian_filter, cu_apply_low_pass_filter, cu_apply_low_pass_filter!
 
 function _rect_filter!(arr, maxi, datlen)
     x = (blockIdx().x - 1) * blockDim().x + threadIdx().x
@@ -17,7 +17,7 @@ end
 """
     cu_rectangle_filter(prop_dist::AbstractFloat, wavlen::AbstractFloat, imglen::Int, pixel_picth::AbstractFloat)
 
-Creates a low pass filter with a rectangular window. This can be multiplied with the Fourier transform of wavefront to get the low pass filtered wavefront after propagation. See Eq. 13 and 14 in (Fugal, 2009, https://doi.org/10.1088/0957-0233/20/7/075501)
+Creates a low pass filter with a rectangular window. This can be multiplied with the Fourier transform of wavefront to get the low pass filtered wavefront. See Eq. 13 and 14 in (Fugal, 2009, https://doi.org/10.1088/0957-0233/20/7/075501)
 
 # Arguments
 - `prop_dist::AbstractFloat`: The maximum propagation distance of recorded objects.
@@ -30,7 +30,7 @@ Creates a low pass filter with a rectangular window. This can be multiplied with
 """
 function cu_rectangle_filter(prop_dist::AbstractFloat, wavlen::AbstractFloat, imglen::Int, pixel_picth::AbstractFloat)
     arr = CUDA.ones(Float32, (imglen, imglen))
-    maxi = 1/(sqrt(2.0)*wavlen) * imglen^2 * pixel_picth^2 / sqrt(4.0*prop_dist^2 + imglen^2 * pixel_picth^2)
+    maxi = 1/wavlen * imglen^2 * pixel_picth^2 / sqrt(4.0*prop_dist^2 + imglen^2 * pixel_picth^2)
     threads = (32,32)
     blocks = cld.((imglen, imglen), threads)
     @cuda threads=threads blocks=blocks _rect_filter!(arr, maxi, imglen)
@@ -52,7 +52,7 @@ end
 """
     cu_super_gaussian_filter(prop_dist::AbstractFloat, wavlen::AbstractFloat, imglen::Int, pixel_picth::AbstractFloat)
 
-Creates a low pass filter with a super Gaussian window. This can be multiplied with the Fourier transform of wavefront to get the low pass filtered wavefront after propagation. See Eq. 15 in (Fugal, 2009, https://doi.org/10.1088/0957-0233/20/7/075501)
+Creates a low pass filter with a super Gaussian window. This can be multiplied with the Fourier transform of wavefront to get the low pass filtered wavefront. See Eq. 15 in (Fugal, 2009, https://doi.org/10.1088/0957-0233/20/7/075501)
 
 # Arguments
 - `prop_dist::AbstractFloat`: The maximum propagation distance of recorded objects.
@@ -65,10 +65,43 @@ Creates a low pass filter with a super Gaussian window. This can be multiplied w
 """
 function cu_super_gaussian_filter(prop_dist::AbstractFloat, wavlen::AbstractFloat, imglen::Int, pixel_picth::AbstractFloat)
     arr = CUDA.zeros(Float32, (imglen, imglen))
-    maxi = 1/(sqrt(2.0)*wavlen) * imglen^2 * pixel_picth^2 / sqrt(4.0*prop_dist^2 + imglen^2 * pixel_picth^2)
-    σ_x = maxi/(imglen*pixel_picth)/(0.25*log(2.0))^(1/6)
+    maxi = 1/wavlen * imglen^2 * pixel_picth^2 / sqrt(4.0*prop_dist^2 + imglen^2 * pixel_picth^2)
+    σ_x = maxi/(imglen*pixel_picth)/(2.0*log(2.0))^(1/6)
     threads = (32,32)
     blocks = cld.((imglen, imglen), threads)
     @cuda threads=threads blocks=blocks _super_gaussian_filter!(arr, σ_x, imglen, pixel_picth)
     return CuLowPassFilter(arr)
+end
+
+"""
+    cu_apply_low_pass_filter!(holo, lpf)
+
+Apply a low pass filter to the wavefront `holo`. The low pass filter is applied by multiplying the Fourier transform of the wavefront with the Fourier transform of the low pass filter. The wavefront is then reconstructed by taking the inverse Fourier transform of the filtered Fourier transform.
+
+# Arguments
+- `holo::CuWavefront`: The wavefront to apply the low pass filter.
+- `lpf::CuLowPassFilter`: The low pass filter to apply to the wavefront.
+
+# Returns
+- `nothing`
+"""
+function cu_apply_low_pass_filter!(holo::CuWavefront, lpf::CuLowPassFilter)
+    holo.data .= CUFFT.ifft(CUFFT.ifftshift(lpf.data .* CUFFT.fftshift(CUFFT.fft(holo.data))))
+    return nothing
+end
+
+"""
+    cu_apply_low_pass_filter(holo, lpf)
+
+Apply a low pass filter to the wavefront `holo`. The low pass filter is applied by multiplying the Fourier transform of the wavefront with the Fourier transform of the low pass filter. The wavefront is then reconstructed by taking the inverse Fourier transform of the filtered Fourier transform.
+
+# Arguments
+- `holo::CuWavefront`: The wavefront to apply the low pass filter.
+- `lpf::CuLowPassFilter`: The low pass filter to apply to the wavefront.
+
+# Returns
+- `CuWavefront{ComplexF32}`: The wavefront after applying the low pass filter.
+"""
+function cu_apply_low_pass_filter(holo::CuWavefront, lpf::CuLowPassFilter)
+    return CuWavefront(CUFFT.ifft(CUFFT.ifftshift(lpf.data .* CUFFT.fftshift(CUFFT.fft(holo.data)))))
 end

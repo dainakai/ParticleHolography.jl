@@ -3,8 +3,10 @@ using StatsBase
 using ProgressMeter
 using Colors
 using FixedPointNumbers
+using JSON
+using FileIO
 
-export load_gray2float, find_external_contours, draw_contours!, make_background
+export load_gray2float, find_external_contours, draw_contours!, make_background, pad_with_mean, dictsave, dictload
 
 """
     load_gray2float(path)
@@ -219,4 +221,52 @@ function make_background(pathlist::Vector{String}; mode=:mode)
         background = [(value[1]-1.0)./255.0 for value in argmax(votevol, dims=1)[1,:,:]]
         return background
     end
+end
+
+function pad_with_mean(img, padsize)
+    @assert padsize > size(img, 1) && padsize > size(img, 2) "Padsize should be larger than the image size. padsize: $padsize, img size: $(size(img))"
+    meanval = mean(img)
+    output = fill(meanval, (padsize, padsize))
+    output[div(padsize,2)-div(size(img,1),2)+1:div(padsize,2)-div(size(img,1),2)+size(img,1), div(padsize,2)-div(size(img,2),2)+1:div(padsize,2)-div(size(img,2),2)+size(img,2)] .= img
+    return output
+end
+
+
+"""
+    dictsave(filename, dict)
+
+Save a particle dictionary to a file in JSON format. The dictionary should have UUID keys and values as Vector{Float32}, which includes the coordinates (and diameters) of the particles.
+
+# Arguments
+- `filename::String`: The path to the file.
+- `dict::Dict`: The dictionary to save.
+
+# Returns
+- `nothing`
+"""
+function dictsave(filename, dict::Dict)
+    open(filename, "w") do io
+        JSON.print(io, dict)
+    end
+    return nothing
+end
+
+"""
+    dictload(filename)
+
+Load a particle dictionary from a file in JSON format. The dictionary should have UUID keys and values as Vector{Float32}, which includes the coordinates (and diameters) of the particles.
+
+# Arguments
+- `filename::String`: The path to the file.
+
+# Returns
+- `Dict`: The loaded dictionary.
+"""
+function dictload(filename)
+    data = JSON.parsefile(filename)
+    dict = Dict{UUID, Vector{Float32}}()
+    for (key, value) in data
+        dict[UUID(key)] = value
+    end
+    return dict
 end

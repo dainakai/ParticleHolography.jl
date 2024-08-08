@@ -1,7 +1,7 @@
 # Gabor holography
-## GPU-accelerated Gabor reconstruction
+## [GPU-accelerated Gabor reconstruction](@id gabor_reconst)
 
-Please refer to [Gabor holography](@ref gabor_explain) for the principles of this method. The code below is an example of performing inline holographic reconstruction using an NVIDIA GPU (CUDA.jl). Your computer needs to be ready to use NVIDIA GPUs with CUDA.jl. It reconstructs a volume of size `datlenΔx` x `datlenΔx` x `slicesΔz` when the camera plane is considered as the ``xy`` plane and the direction perpendicular to the camera plane, which is the optical axis, is the ``z`` axis. Furthermore, it creates an ``xy`` projection image of the reconstructed volume by taking the minimum value of the ``z`` axis profile at each pixel in the ``xy`` plane of the reconstructed volume. The operation of extracting the xy projection image from the volume can be expressed by the following equation:
+Please refer to [Gabor holography](@ref gabor_explain) for the principles of this method. The code below is an example of performing inline holographic reconstruction using an NVIDIA GPU (CUDA.jl). Your computer needs to be ready to use NVIDIA GPUs with CUDA.jl. It reconstructs a volume of size `datlenΔx` x `datlenΔx` x `slicesΔz` when the camera plane is considered as the ``xy`` plane and the direction perpendicular to the camera plane, which is the optical axis, is the ``z`` axis. In this example case, it creates an ``xy`` projection image of the reconstructed volume by taking the minimum value of the ``z`` axis profile at each pixel in the ``xy`` plane of the reconstructed volume. The operation of extracting the xy projection image from the volume can be expressed by the following equation (details in [`cu_get_reconst_xyprojection`](@ref cu_get_reconst_xyprojection)):
 
 ```math
 \mathrm{xyproj}(x, y) = \min_{z} \left\{ \mathrm{rcstvol}(x, y, z) \right\}
@@ -51,21 +51,4 @@ save("xyprojection_gabor.png", Array(d_xyproj)) # Copy the d_xyproj to host memo
        <p style="text-align:center;">Output xy projection image</p>
    </div>
 </div>
-```
-
-## Index
-
-```@index
-Pages = ["gabor.md"]
-Order = [:type, :function]
-```
-
-## Functions
-
-```@docs
-load_gray2float
-cu_transfer_sqrt_arr
-cu_transfer
-cu_gabor_wavefront
-cu_get_reconst_xyprojection
 ```

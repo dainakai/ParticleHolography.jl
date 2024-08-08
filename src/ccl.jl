@@ -180,13 +180,14 @@ end
 8-way connected component labeling on binary image based on the article by Playne and Hawick https://ieeexplore.ieee.org/document/8274991 and the implementation by FolkeV https://github.com/FolkeV/CUDA_CCL. It works using the CUDA.jl package and NVIDIA GPUs.
 
 # Arguments
-- `input_img::CuArray{Float32, 2}`: Input binary image.
+- `input_img::CuArray{Float32, 2}`: Input binary image. 
 
 # Returns
 - `output_img::CuArray{UInt32, 2}`: Output labeled image.
 
 """
 function cu_connected_component_labeling(input_img)
+    @assert length(input_img) <= 2^32-1 "Image is too large. Maximum length is 2^32-1."
     output_img = CUDA.zeros(UInt32, size(input_img))
 
     height, width = size(input_img)
@@ -240,16 +241,29 @@ function cu_find_valid_labels(labels::CuArray{UInt32, 2})
 end
 
 function get_bounding_rectangles(labels::Array{UInt32, 2}, valid_labels::Vector{Int64})
-    bounding_rectangles = NTuple{4, Int}[]
-    for label in valid_labels
-        indices = findall(labels .== label)
-        y_min = minimum([ci[1] for ci in indices])
-        x_min = minimum([ci[2] for ci in indices])
-        y_max = maximum([ci[1] for ci in indices])
-        x_max = maximum([ci[2] for ci in indices])
-        push!(bounding_rectangles, (x_min, y_min, x_max, y_max))
+    height, width = size(labels)
+    label_to_index = Dict(l => i for (i, l) in enumerate(valid_labels))
+    
+    # Initialize arrays to store min and max coordinates for each label
+    x_min = fill(typemax(Int), length(valid_labels))
+    y_min = fill(typemax(Int), length(valid_labels))
+    x_max = fill(typemin(Int), length(valid_labels))
+    y_max = fill(typemin(Int), length(valid_labels))
+    
+    # Iterate through the labels array once
+    for j in 1:width, i in 1:height
+        label = labels[i, j]
+        if haskey(label_to_index, label)
+            idx = label_to_index[label]
+            x_min[idx] = min(x_min[idx], j)
+            y_min[idx] = min(y_min[idx], i)
+            x_max[idx] = max(x_max[idx], j)
+            y_max[idx] = max(y_max[idx], i)
+        end
     end
-    return bounding_rectangles
+    
+    # Construct the bounding rectangles
+    return [(x_min[i], y_min[i], x_max[i], y_max[i]) for i in 1:length(valid_labels)]
 end
 
 function gen_particle_neighborhoods(bounding_rectangles, slicenum)
@@ -336,6 +350,22 @@ function update_particle_neighborhoods!(particle_neighborhoods, bounding_rectang
     return nothing
 end
 
+"""
+    finalize_particle_neighborhoods!(particle_neighborhoods)
+
+Finalizes the particle neighborhoods by removing duplicates and particles that are too small or too elongated in the x-y plane. Detailed criteria are as follows:
+
+* Duplicate bounding boxes
+* Bounding boxes with a length-to-width (x-y) ratio greater than 3 or less than 1/3
+* Bounding boxes with an area less than ``\\sqrt{10}`` pixels
+* Bounding boxes with a depth of 1
+
+# Arguments
+- `particle_neighborhoods`: The particle neighborhoods to be finalized.
+
+# Returns
+- `nothing`
+"""
 function finalize_particle_neighborhoods!(particle_neighborhoods)
     delete_duplicates!(particle_neighborhoods)
     for item in particle_neighborhoods
