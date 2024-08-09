@@ -325,15 +325,22 @@ using Plots
         # Reconstruction
         d_vol = cu_get_reconst_vol(d_holo, d_tf, d_slice, slices)
 
+        # Low pass filtering and Reconstruction
+        d_lpf = cu_super_gaussian_filter(pr_dist, λ, datlen, Δx)
+        cu_apply_low_pass_filter!(d_holo, d_lpf)
+
+        d_lpf_vol = cu_get_reconst_vol(d_holo, d_tf, d_slice, slices)
+
         # Binarization
         d_bin_vol = d_vol .<= threshold
 
         particle_bbs = particle_bounding_boxes(d_bin_vol)
         @test particle_bbs !== nothing
         @test particle_coordinates(particle_bbs, d_vol) !== nothing
-        @test particle_coor_diams(particle_bbs, d_vol) !== nothing
+        @test particle_coor_diams(particle_bbs, d_vol, d_lpf_vol) !== nothing
 
         d_vol = nothing
+        d_lpf_vol = nothing
         d_bin_vol = nothing
     end
 
@@ -361,7 +368,7 @@ using Plots
     end
 
     # plot_recipes.jl --------------------------------------------------------------
-    @testset "plot recipes" begin
+    @testset "ParticlePlot" begin
         # Load the particle coordinates
         files = glob("./data/dicts/*.json")
 
@@ -373,5 +380,27 @@ using Plots
         end
         
         @test savefig("./data/particle_trajectories.png") !== nothing
+    end
+
+    @testset "TrajectoryPlot" begin
+        # Load the particle coordinates
+        files = glob("./data/dicts/*.json")[1:5]
+
+        # Convert to dictionary with UUID keys and Float64 values
+        dicts = dictload.(files)
+
+        graphs = [Labonte(dict1, dict2) for (dict1, dict2) in zip(dicts[1:end-1], dicts[2:end])]
+
+        paths = enum_edge(graphs[1])
+
+        for graph in graphs[2:end]
+            append_path!(paths, graph)
+        end
+
+        fulldict = gen_fulldict(dicts)
+
+        trajectoryplot(paths, fulldict)
+
+        @test savefig("./data/trajectory_plot.png") !== nothing
     end
 end

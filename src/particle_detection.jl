@@ -131,7 +131,7 @@ function equivalent_diameter(arr::AbstractArray{<:AbstractFloat,2})
 end
 
 """
-    particle_coor_diams(particle_bbs, d_vol; d_lpf_vol = nothing, depth_metrics = tamura, profile_smoothing_kernel = Kernel.gaussian(5,), diameter_metrics = equivalent_diameter)
+    particle_coor_diams(particle_bbs, d_vol, d_lpf_vol = nothing; depth_metrics = tamura, profile_smoothing_kernel = Kernel.gaussian(5,), diameter_metrics = equivalent_diameter)
 
 Calculates the coordinates and diameters of the particles in the reconstructed volume with the bounding boxe dictionary. The depth of the particles is the maximum of the profile that is calculated using the `depth_metrics` function at each slice of the bounding box. The profile is then smoothed using the `profile_smoothing_kernel`. The x and y coordinates are calculated by finding the center of mass of the slice with the detected depth. The low pass filtered volume would be better for coordinate detection. The diameter of the particles is calculated using the `diameter_metrics` function. If the low pass filtered volume is provided, the coordinate is calculated using the low pass filtered volume.
 
