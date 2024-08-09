@@ -33,20 +33,20 @@ end
 
 # rotate direction clockwise
 function _clockwise(dir)
-    return (dir)%8 + 1
+    return (dir) % 8 + 1
 end
 
 # rotate direction counterclockwise
 function _counterclockwise(dir)
-    return (dir+6)%8 + 1
+    return (dir + 6) % 8 + 1
 end
 
 # move from current pixel to next in given direction
 function _move(pixel, image, dir, dir_delta)
     newp = pixel + dir_delta[dir]
     height, width = size(image)
-    if (0 < newp[1] <= height) &&  (0 < newp[2] <= width)
-        if image[newp]!=0
+    if (0 < newp[1] <= height) && (0 < newp[2] <= width)
+        if image[newp] != 0
             return newp
         end
     end
@@ -55,8 +55,8 @@ end
 
 # finds direction between two given pixels
 function _from_to(from, to, dir_delta)
-    delta = to-from
-    return findall(x->x == delta, dir_delta)[1]
+    delta = to - from
+    return findall(x -> x == delta, dir_delta)[1]
 end
 
 function _detect_move(image, p0, p2, nbd, border, done, dir_delta)
@@ -65,7 +65,7 @@ function _detect_move(image, p0, p2, nbd, border, done, dir_delta)
     p1 = CartesianIndex(0, 0)
     while moved != dir ## 3.1
         newp = _move(p0, image, moved, dir_delta)
-        if newp[1]!=0
+        if newp[1] != 0
             p1 = newp
             break
         end
@@ -122,17 +122,17 @@ function find_external_contours(image)
     nbd = 1
     lnbd = 1
     image = Float64.(image)
-    contour_list =  Vector{typeof(CartesianIndex[])}()
+    contour_list = Vector{typeof(CartesianIndex[])}()
     done = [false, false, false, false, false, false, false, false]
 
     # Clockwise Moore neighborhood.
-    dir_delta = [CartesianIndex(-1, 0) , CartesianIndex(-1, 1), CartesianIndex(0, 1), CartesianIndex(1, 1), CartesianIndex(1, 0), CartesianIndex(1, -1), CartesianIndex(0, -1), CartesianIndex(-1,-1)]
+    dir_delta = [CartesianIndex(-1, 0), CartesianIndex(-1, 1), CartesianIndex(0, 1), CartesianIndex(1, 1), CartesianIndex(1, 0), CartesianIndex(1, -1), CartesianIndex(0, -1), CartesianIndex(-1, -1)]
 
     height, width = size(image)
 
-    for i=1:height
+    for i = 1:height
         lnbd = 1
-        for j=1:width
+        for j = 1:width
             fji = image[i, j]
             is_outer = (image[i, j] == 1 && (j == 1 || image[i, j-1] == 0)) ## 1 (a)
             #is_hole = (image[i, j] >= 1 && (j == width || image[i, j+1] == 0))
@@ -155,7 +155,7 @@ function find_external_contours(image)
                     from += CartesianIndex(0, 1)
                 end
 
-                p0 = CartesianIndex(i,j)
+                p0 = CartesianIndex(i, j)
                 _detect_move(image, p0, from, nbd, border, done, dir_delta) ## 3
                 if isempty(border) ##TODO
                     push!(border, p0)
@@ -201,24 +201,24 @@ Make a background image from a list of image paths. The background image is calc
 function make_background(pathlist::Vector{String}; mode=:mode)
     if mode == :mean
         background = zeros(Float64, size(load_gray2float(pathlist[1])))
-        @showprogress desc="Background calculating..." for path in pathlist
+        @showprogress desc = "Background calculating..." for path in pathlist
             background .= background .+ Float64.(load_gray2float(path))
         end
         background /= length(pathlist)
         return background
 
     elseif mode == :mode
-        votevol = zeros(Int, (256,size(load_gray2float(pathlist[1]))...))
+        votevol = zeros(Int, (256, size(load_gray2float(pathlist[1]))...))
         datlen = size(load(pathlist[1]))[1]
-        @showprogress desc="Background calculating..." for path in pathlist
+        @showprogress desc = "Background calculating..." for path in pathlist
             img = Int.(reinterpret.(UInt8, channelview(Gray.(load(path)))))
             for x in 1:datlen
                 for y in 1:datlen
-                    votevol[img[y,x]+1,y,x] += 1
+                    votevol[img[y, x]+1, y, x] += 1
                 end
             end
         end
-        background = [(value[1]-1.0)./255.0 for value in argmax(votevol, dims=1)[1,:,:]]
+        background = [(value[1] - 1.0) ./ 255.0 for value in argmax(votevol, dims=1)[1, :, :]]
         return background
     end
 end
@@ -227,7 +227,7 @@ function pad_with_mean(img, padsize)
     @assert padsize > size(img, 1) && padsize > size(img, 2) "Padsize should be larger than the image size. padsize: $padsize, img size: $(size(img))"
     meanval = mean(img)
     output = fill(meanval, (padsize, padsize))
-    output[div(padsize,2)-div(size(img,1),2)+1:div(padsize,2)-div(size(img,1),2)+size(img,1), div(padsize,2)-div(size(img,2),2)+1:div(padsize,2)-div(size(img,2),2)+size(img,2)] .= img
+    output[div(padsize, 2)-div(size(img, 1), 2)+1:div(padsize, 2)-div(size(img, 1), 2)+size(img, 1), div(padsize, 2)-div(size(img, 2), 2)+1:div(padsize, 2)-div(size(img, 2), 2)+size(img, 2)] .= img
     return output
 end
 
@@ -264,7 +264,7 @@ Load a particle dictionary from a file in JSON format. The dictionary should hav
 """
 function dictload(filename)
     data = JSON.parsefile(filename)
-    dict = Dict{UUID, Vector{Float32}}()
+    dict = Dict{UUID,Vector{Float32}}()
     for (key, value) in data
         dict[UUID(key)] = value
     end

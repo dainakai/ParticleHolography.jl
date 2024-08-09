@@ -12,8 +12,8 @@ function _dilate_3d!(dilated, vol, datlen, slices)
     y = (blockIdx().y - 1) * blockDim().y + threadIdx().y
     z = (blockIdx().z - 1) * blockDim().z + threadIdx().z
 
-    if x>1 && x<datlen && y>1 && y<datlen && z>0 && z<=slices
-        @inbounds dilated[y,x,z] = vol[y-1,x-1,z] || vol[y-1,x,z] || vol[y-1,x+1,z] || vol[y,x-1,z] || vol[y,x,z] || vol[y,x+1,z] || vol[y+1,x-1,z] || vol[y+1,x,z] || vol[y+1,x+1,z]
+    if x > 1 && x < datlen && y > 1 && y < datlen && z > 0 && z <= slices
+        @inbounds dilated[y, x, z] = vol[y-1, x-1, z] || vol[y-1, x, z] || vol[y-1, x+1, z] || vol[y, x-1, z] || vol[y, x, z] || vol[y, x+1, z] || vol[y+1, x-1, z] || vol[y+1, x, z] || vol[y+1, x+1, z]
     end
     return nothing
 end
@@ -22,9 +22,9 @@ function cu_dilate(vol::CuArray{Bool,3})
     datlen = size(vol, 1)
     slices = size(vol, 3)
     dilated = CUDA.fill(false, (datlen, datlen, slices))
-    threads = (32,32,1)
+    threads = (32, 32, 1)
     blocks = cld.((datlen, datlen, slices), threads)
-    @cuda threads=threads blocks=blocks _dilate_3d!(dilated, vol, datlen, slices)
+    @cuda threads = threads blocks = blocks _dilate_3d!(dilated, vol, datlen, slices)
     return dilated
 end
 
@@ -43,8 +43,8 @@ Additionally, this processing may have some effects, such as slightly elongating
 # Returns
 - `Dict{UUID, Vector{Int}}`: The bounding boxes of the particles.
 """
-function particle_bounding_boxes(d_bin_vol::CuArray{Bool, 3})
-    @views labeledimg = cu_connected_component_labeling(d_bin_vol[:,:,1])
+function particle_bounding_boxes(d_bin_vol::CuArray{Bool,3})
+    @views labeledimg = cu_connected_component_labeling(d_bin_vol[:, :, 1])
     valid_labels = cu_find_valid_labels(labeledimg)
     bounding_boxes = get_bounding_rectangles(Array(labeledimg), valid_labels)
     particle_bbs = gen_particle_neighborhoods(bounding_boxes, 1)
@@ -52,7 +52,7 @@ function particle_bounding_boxes(d_bin_vol::CuArray{Bool, 3})
     slices = size(d_bin_vol, 3)
     if slices > 1
         for idx in 2:slices
-            @views labeledimg = cu_connected_component_labeling(d_bin_vol[:,:,idx])
+            @views labeledimg = cu_connected_component_labeling(d_bin_vol[:, :, idx])
             valid_labels = cu_find_valid_labels(labeledimg)
             bounding_boxes = get_bounding_rectangles(Array(labeledimg), valid_labels)
             update_particle_neighborhoods!(particle_bbs, bounding_boxes, idx)
@@ -75,20 +75,20 @@ Calculates the Tamura coefficient of an array. The Tamura coefficient is defined
 - `Float32`: The Tamura coefficient of the array.
 """
 function tamura(arr::AbstractArray{<:AbstractFloat,2})
-    return std(arr)/mean(arr)
+    return std(arr) / mean(arr)
 end
 
-function depth_profile(f::Function, bounding_rect_3d::AbstractArray{<:Union{AbstractFloat, Complex}, 3})
-    return [f(bounding_rect_3d[:,:,i]) for i in axes(bounding_rect_3d, 3)]
+function depth_profile(f::Function, bounding_rect_3d::AbstractArray{<:Union{AbstractFloat,Complex},3})
+    return [f(bounding_rect_3d[:, :, i]) for i in axes(bounding_rect_3d, 3)]
 end
 
-function getcenterfromslice(arr::AbstractArray{<:AbstractFloat, 2})
+function getcenterfromslice(arr::AbstractArray{<:AbstractFloat,2})
     x = 0.0
     y = 0.0
     for i in axes(arr, 1)
         for j in axes(arr, 2)
-            y += i * arr[i,j]
-            x += j * arr[i,j]
+            y += i * arr[i, j]
+            x += j * arr[i, j]
         end
     end
     x = x / sum(arr)
@@ -111,23 +111,23 @@ Calculates the coordinates of the particles in the reconstructed volume with the
 # Returns
 - `Dict{UUID, Vector{Float32}}`: The coordinates of the particles.
 """
-function particle_coordinates(particle_bbs::Dict{UUID, Vector{Int}}, d_vol::CuArray{N0f8, 3}; depth_metrics::Function = tamura, profile_smoothing_kernel = Kernel.gaussian((5,)))
-    particle_coords = Dict{UUID, Vector{Float32}}()
+function particle_coordinates(particle_bbs::Dict{UUID,Vector{Int}}, d_vol::CuArray{N0f8,3}; depth_metrics::Function=tamura, profile_smoothing_kernel=Kernel.gaussian((5,)))
+    particle_coords = Dict{UUID,Vector{Float32}}()
     for (key, value) in particle_bbs
         @views subvol = Float32.(d_vol[value[2]:value[5], value[1]:value[4], value[3]:value[6]])
         zmetric = depth_profile(depth_metrics, subvol)
         imfilter!(zmetric, zmetric, profile_smoothing_kernel)
         z = argmax(zmetric)
-        (x, y) = getcenterfromslice(Array(subvol[:,:,z]))
+        (x, y) = getcenterfromslice(Array(subvol[:, :, z]))
         particle_coords[key] = [x + value[1] - 1, y + value[2] - 1, z + value[3] - 1]
     end
     return particle_coords
 end
 
-function equivalent_diameter(arr::AbstractArray{<:AbstractFloat, 2})
-    t = find_threshold(arr, algorithm::HistogramThresholding.Otsu())
+function equivalent_diameter(arr::AbstractArray{<:AbstractFloat,2})
+    t = find_threshold(arr, HistogramThresholding.Otsu())
     newarr = arr .<= t
-    return 2 * sqrt(sum(newarr)/π)
+    return 2 * sqrt(sum(newarr) / π)
 end
 
 """
@@ -138,7 +138,11 @@ Calculates the coordinates and diameters of the particles in the reconstructed v
 # Arguments
 - `particle_bbs::Dict{UUID, Vector{Int}}`: The bounding boxes of the particles.
 - `d_vol::CuArray{N0f8, 3}`: The reconstructed volume.
-- `d_lpf_vol::CuArray{N0f8, 3} = nothing`: The low pass filtered volume.
+
+# Optional arguments
+- `d_lpf_vol::Union{CuArray{N0f8,3}, Nothing} = nothing`: The low pass filtered volume.
+
+# Optional keyword arguments
 - `depth_metrics::Function = tamura`: The function that calculates the depth profile of the particles.
 - `profile_smoothing_kernel = Kernel.gaussian((5,))`: The kernel used for smoothing the depth profile.
 - `diameter_metrics::Function = equivalent_diameter`: The function that calculates the diameter of the particles.
@@ -146,8 +150,8 @@ Calculates the coordinates and diameters of the particles in the reconstructed v
 # Returns
 - `Dict{UUID, Vector{Float32}}`: The coordinates and diameters of the particles.
 """
-function particle_coor_diams(particle_bbs::Dict{UUID, Vector{Int}}, d_vol::CuArray{N0f8, 3}; d_lpf_vol::CuArray{N0f8, 3} = nothing, depth_metrics::Function = tamura, profile_smoothing_kernel = Kernel.gaussian((5,)), diameter_metrics::Function = equivalent_diameter)
-    particle_coords = Dict{UUID, Vector{Float32}}()
+function particle_coor_diams(particle_bbs::Dict{UUID,Vector{Int}}, d_vol::CuArray{N0f8,3}, d_lpf_vol::Union{CuArray{N0f8,3}, Nothing}=nothing; depth_metrics::Function=tamura, profile_smoothing_kernel=Kernel.gaussian((5,)), diameter_metrics::Function=equivalent_diameter)
+    particle_coords = Dict{UUID,Vector{Float32}}()
     for (key, value) in particle_bbs
         @views subvol = Float32.(d_vol[value[2]:value[5], value[1]:value[4], value[3]:value[6]])
         if !isnothing(d_lpf_vol)
@@ -155,15 +159,16 @@ function particle_coor_diams(particle_bbs::Dict{UUID, Vector{Int}}, d_vol::CuArr
             zmetric = depth_profile(depth_metrics, subvol_lpf)
             imfilter!(zmetric, zmetric, profile_smoothing_kernel)
             z = argmax(zmetric)
-            (x, y) = getcenterfromslice(Array(subvol_lpf[:,:,z]))
-            diam = diameter_metrics(subvol[:,:,z])
+            (x, y) = getcenterfromslice(Array(subvol_lpf[:, :, z]))
+            diam = diameter_metrics(Array(subvol[:, :, z]))
             particle_coords[key] = [x + value[1] - 1, y + value[2] - 1, z + value[3] - 1, diam]
         else
             zmetric = depth_profile(depth_metrics, subvol)
             imfilter!(zmetric, zmetric, profile_smoothing_kernel)
             z = argmax(zmetric)
-            (x, y) = getcenterfromslice(Array(subvol[:,:,z]))
-            diam = diameter_metrics(subvol[:,:,z])
+            hostsubvol = Array(subvol[:, :, z])
+            (x, y) = getcenterfromslice(hostsubvol)
+            diam = diameter_metrics(hostsubvol)
             particle_coords[key] = [x + value[1] - 1, y + value[2] - 1, z + value[3] - 1, diam]
         end
     end

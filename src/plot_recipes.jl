@@ -22,7 +22,7 @@ In this plot, we display the x-y plane in the foreground by mapping the data's z
 Plots.@recipe function f(m::ParticlePlot)
     @assert length(m.args) >= 1 "ParticlePlot requires at least one argument"
     D = m.args[1]
-    @assert (D isa Dict{UUID, Vector{Float32}}) "The first argument should be a Dict{UUID, Vector{Float32}}"
+    @assert (D isa Dict{UUID,Vector{Float32}}) "The first argument should be a Dict{UUID, Vector{Float32}}"
 
     pscale = get(plotattributes, :scaling, (1.0, 1.0, -1.0))
     pshift = get(plotattributes, :shift, (0.0, 0.0, 0.0))
@@ -69,7 +69,7 @@ Plots particle trajectories with different colors in 3D space. `paths` is a `Vec
 
 Plots.@recipe function f(tp::TrajectoryPlot)
     @assert length(tp.args) >= 2 "TrajectoryPlot requires at least two arguments: paths and fulldict"
-    
+
     paths, fulldict = tp.args[1:2]
 
     pscale = get(plotattributes, :scaling, (1.0, 1.0, -1.0))

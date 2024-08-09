@@ -35,10 +35,10 @@ function SOM!(weight1, weight2, Dmax, α, R)
             if node_distance(weight2[cand_key], weight2[key]) <= R
                 α_list[key] = α
             else
-                α_list[key] = α*exp(-(node_distance(weight2[cand_key], weight2[key])-R)^2/(2*R^2))
+                α_list[key] = α * exp(-(node_distance(weight2[cand_key], weight2[key]) - R)^2 / (2 * R^2))
             end
         end
-        
+
         for key in point_neighbor
             Δw[key] += α_list[key] .* (point[2] .- weight2[cand_key])
         end
@@ -70,10 +70,10 @@ function SOM!(weight1, weight2, Dmax, α, R)
             if node_distance(weight1[cand_key], weight1[key]) <= R
                 α_list[key] = α
             else
-                α_list[key] = α*exp(-(node_distance(weight1[cand_key], weight1[key])-R)^2/(2*R^2))
+                α_list[key] = α * exp(-(node_distance(weight1[cand_key], weight1[key]) - R)^2 / (2 * R^2))
             end
         end
-        
+
         for key in point_neighbor
             ΔW[key] += α_list[key] .* (point[2] .- weight1[cand_key])
         end
@@ -88,7 +88,7 @@ function SOM!(weight1, weight2, Dmax, α, R)
     for key in keys(weight2)
         weight2[key] .+= Δw[key]
     end
-    
+
     return Set{UUID}(cand_weight1), Set{UUID}(cand_weight2)
 end
 
@@ -148,8 +148,8 @@ end
 function two_frame_metagraph(weight1, weight2, file1, file2, Rend)
     g = MetaGraph(
         DiGraph(),
-        label_type = UUID,
-        vertex_data_type = NTuple{2, Float64},
+        label_type=UUID,
+        vertex_data_type=NTuple{2,Float64},
     )
 
     for (key, value) in file1
@@ -193,8 +193,8 @@ Implementation of the improved Labonté algorithm [ohmi, labonte](@cite). Takes 
 - `MetaGraph`: Graph representing the correspondence between detected particles at two time points.
 """
 function Labonte(dict1, dict2; Dmax=50.0, α=0.005, R=50.0, Rend=0.1, β=0.9, N=10)
-    weight1 = copy(dict1)
-    weight2 = copy(dict2)
+    weight1 = deepcopy(dict1)
+    weight2 = deepcopy(dict2)
 
     SOM_iteration!(weight1, weight2, Dmax, α, R, Rend, β, N)
     g = two_frame_metagraph(weight1, weight2, dict1, dict2, Rend)
@@ -215,7 +215,7 @@ Enumerates all edges in the given `MetaGraph` `g` and returns them as an array o
 function enum_edge(g::MetaGraph)
     paths = Vector{UUID}[]
     for edge in edges(g)
-        push!(paths, [label_for(g,edge.src), label_for(g,edge.dst)])
+        push!(paths, [label_for(g, edge.src), label_for(g, edge.dst)])
     end
     return paths
 end
@@ -288,7 +288,7 @@ Generates a dictionary containing the UUIDs of particles for all conceivable fra
 # Returns
 - `Dict{UUID, Vector{Float32}}`: Dictionary containing the UUIDs of particles for all conceivable frames as keys and their coordinates as values.
 """
-function gen_fulldict(dicts::Vector{Dict{UUID, Vector{Float32}}})
+function gen_fulldict(dicts::Vector{Dict{UUID,Vector{Float32}}})
     fulldict = Dict()
     for (idx, subdict) in enumerate(dicts)
         newdict = Dict()

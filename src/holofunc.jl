@@ -2,16 +2,13 @@ using CUDA
 using CUDA.CUFFT
 using FixedPointNumbers
 
-export cu_transfer_sqrt_arr, cu_transfer, cu_gabor_wavefront, cu_phase_retrieval_holo, cu_get_reconst_vol, cu_get_reconst_xyprojection, cu_get_reconst_vol_and_xyprojection
-
-# Not tested
-export cu_get_reconst_complex_vol
+export cu_transfer_sqrt_arr, cu_transfer, cu_gabor_wavefront, cu_phase_retrieval_holo, cu_get_reconst_vol, cu_get_reconst_xyprojection, cu_get_reconst_vol_and_xyprojection, cu_get_reconst_complex_vol
 
 function _cu_transfer_sqrt_arr!(Plane, datLen, wavLen, dx)
-    x = (blockIdx().x-1)*blockDim().x + threadIdx().x
-    y = (blockIdx().y-1)*blockDim().y + threadIdx().y
+    x = (blockIdx().x - 1) * blockDim().x + threadIdx().x
+    y = (blockIdx().y - 1) * blockDim().y + threadIdx().y
     if x <= datLen && y <= datLen
-        @inbounds Plane[x,y] = 1.0 - ((x-datLen/2 - 1.0)*wavLen/datLen/dx)^2 - ((y-datLen/2 - 1.0)*wavLen/datLen/dx)^2
+        @inbounds Plane[x, y] = 1.0 - ((x - datLen / 2 - 1.0) * wavLen / datLen / dx)^2 - ((y - datLen / 2 - 1.0) * wavLen / datLen / dx)^2
     end
     return nothing
 end
@@ -33,15 +30,15 @@ function cu_transfer_sqrt_arr(datlen::Int, wavlen::AbstractFloat, dx::AbstractFl
     Plane = CuArray{Float32}(undef, datlen, datlen)
     threads = (32, 32)
     blocks = cld.((datlen, datlen), threads)
-    @cuda threads=threads blocks=blocks _cu_transfer_sqrt_arr!(Plane, datlen, wavlen, dx)
+    @cuda threads = threads blocks = blocks _cu_transfer_sqrt_arr!(Plane, datlen, wavlen, dx)
     return CuTransferSqrtPart(Plane)
 end
 
 function _cu_transfer!(Plane, z0, datLen, wavLen, d_sqr)
-    x = (blockIdx().x-1)*blockDim().x + threadIdx().x
-    y = (blockIdx().y-1)*blockDim().y + threadIdx().y
+    x = (blockIdx().x - 1) * blockDim().x + threadIdx().x
+    y = (blockIdx().y - 1) * blockDim().y + threadIdx().y
     if x <= datLen && y <= datLen
-        @inbounds Plane[x,y] = exp(2im*pi*z0/wavLen*sqrt(d_sqr[x,y]))
+        @inbounds Plane[x, y] = exp(2im * pi * z0 / wavLen * sqrt(d_sqr[x, y]))
     end
     return nothing
 end
@@ -64,7 +61,7 @@ function cu_transfer(z0::AbstractFloat, datLen::Int, wavLen::AbstractFloat, d_sq
     Plane = CuArray{ComplexF32}(undef, datLen, datLen)
     threads = (32, 32)
     blocks = cld.((datLen, datLen), threads)
-    @cuda threads=threads blocks=blocks _cu_transfer!(Plane, z0, datLen, wavLen, d_sqr.data)
+    @cuda threads = threads blocks = blocks _cu_transfer!(Plane, z0, datLen, wavLen, d_sqr.data)
     return CuTransfer(Plane)
 end
 
@@ -113,18 +110,18 @@ function cu_phase_retrieval_holo(holo1::CuArray{Float32,2}, holo2::CuArray{Float
 
     for _ in 1:priter
         # STEP1
-        light2 .= CUFFT.ifft(CUFFT.ifftshift(CUFFT.fftshift(CUFFT.fft(light1)).*transfer.data))
+        light2 .= CUFFT.ifft(CUFFT.ifftshift(CUFFT.fftshift(CUFFT.fft(light1)) .* transfer.data))
         phi2 .= angle.(light2)
 
         # STEP2
-        light2 .= sqrtI2.*exp.(1.0im.*phi2)
+        light2 .= sqrtI2 .* exp.(1.0im .* phi2)
 
         # STEP3
-        light1 .= CUFFT.ifft(CUFFT.ifftshift(CUFFT.fftshift(CUFFT.fft(light2)).*invtransfer.data))
+        light1 .= CUFFT.ifft(CUFFT.ifftshift(CUFFT.fftshift(CUFFT.fft(light2)) .* invtransfer.data))
         phi1 .= angle.(light1)
 
         # STEP4
-        light1 .= sqrtI1.*exp.(1.0im.*phi1)
+        light1 .= sqrtI1 .* exp.(1.0im .* phi1)
     end
 
     return CuWavefront(light1)
@@ -136,7 +133,7 @@ end
 ########################  Recontruction functions  ########################
 
 function _normedfloat_to_N0f8(val::AbstractFloat)
-    return reinterpret(N0f8, round(UInt8, clamp(val, 0.0, 1.0)*255))
+    return reinterpret(N0f8, round(UInt8, clamp(val, 0.0, 1.0) * 255))
 end
 
 function _ifft_and_abs(fftholo, return_type::Type)
@@ -165,19 +162,19 @@ Reconstruct the observation volume from the `wavefront` using the transfer funct
 # Returns
 - `CuArray{return_type,3}`: The reconstructed intensity volume.
 """
-function cu_get_reconst_vol(wavefront::CuWavefront{ComplexF32}, transfer_front::CuTransfer{ComplexF32}, transfer_dz::CuTransfer{ComplexF32}, slices::Int, return_type::Type=N0f8) 
+function cu_get_reconst_vol(wavefront::CuWavefront{ComplexF32}, transfer_front::CuTransfer{ComplexF32}, transfer_dz::CuTransfer{ComplexF32}, slices::Int, return_type::Type=N0f8)
     @assert size(wavefront.data) == size(transfer_front.data) == size(transfer_dz.data) "All arrays must have the same size. Got $(size(wavefront.data)), $(size(transfer_front.data)), $(size(transfer_dz.data))."
 
     vol = CuArray{return_type}(undef, size(wavefront.data)..., slices)
-    
-    fftholo = CUFFT.fftshift(CUFFT.fft(wavefront.data))
-    fftholo .= fftholo.*transfer_front.data
 
-    vol[:,:,1] .= _ifft_and_abs(fftholo, return_type)
+    fftholo = CUFFT.fftshift(CUFFT.fft(wavefront.data))
+    fftholo .= fftholo .* transfer_front.data
+
+    vol[:, :, 1] .= _ifft_and_abs(fftholo, return_type)
 
     for i in 2:slices
-        fftholo .= fftholo.*transfer_dz.data
-        vol[:,:,i] .= _ifft_and_abs(fftholo, return_type)
+        fftholo .= fftholo .* transfer_dz.data
+        vol[:, :, i] .= _ifft_and_abs(fftholo, return_type)
     end
 
     return vol
@@ -197,19 +194,19 @@ Reconstruct the observation volume from the `wavefront` using the transfer funct
 # Returns
 - `CuArray{ComplexF32,3}`: The reconstructed complex amplitude volume.
 """
-function cu_get_reconst_complex_vol(wavefront::CuWavefront{ComplexF32}, transfer_front::CuTransfer{ComplexF32}, transfer_dz::CuTransfer{ComplexF32}, slices::Int) 
+function cu_get_reconst_complex_vol(wavefront::CuWavefront{ComplexF32}, transfer_front::CuTransfer{ComplexF32}, transfer_dz::CuTransfer{ComplexF32}, slices::Int)
     @assert size(wavefront.data) == size(transfer_front.data) == size(transfer_dz.data) "All arrays must have the same size. Got $(size(wavefront.data)), $(size(transfer_front.data)), $(size(transfer_dz.data))."
 
     vol = CuArray{ComplexF32}(undef, size(wavefront.data)..., slices)
-    
-    fftholo = CUFFT.fftshift(CUFFT.fft(wavefront.data))
-    fftholo .= fftholo.*transfer_front.data
 
-    vol[:,:,1] .= fftholo |> CUFFT.ifftshift |> CUFFT.ifft
+    fftholo = CUFFT.fftshift(CUFFT.fft(wavefront.data))
+    fftholo .= fftholo .* transfer_front.data
+
+    vol[:, :, 1] .= fftholo |> CUFFT.ifftshift |> CUFFT.ifft
 
     for i in 2:slices
-        fftholo .= fftholo.*transfer_dz.data
-        vol[:,:,i] .= fftholo |> CUFFT.ifftshift |> CUFFT.ifft
+        fftholo .= fftholo .* transfer_dz.data
+        vol[:, :, i] .= fftholo |> CUFFT.ifftshift |> CUFFT.ifft
     end
 
     return vol
@@ -229,20 +226,20 @@ Get the XY projection of the reconstructed volume from the `wavefront` using the
 # Returns
 - `CuArray{Float32,2}`: The XY projection of the reconstructed volume.
 """
-function cu_get_reconst_xyprojection(wavefront::CuWavefront{ComplexF32}, transfer_front::CuTransfer{ComplexF32}, transfer_dz::CuTransfer{ComplexF32}, slices::Int) 
+function cu_get_reconst_xyprojection(wavefront::CuWavefront{ComplexF32}, transfer_front::CuTransfer{ComplexF32}, transfer_dz::CuTransfer{ComplexF32}, slices::Int)
     @assert size(wavefront.data) == size(transfer_front.data) == size(transfer_dz.data) "All arrays must have the same size. Got $(size(wavefront.data)), $(size(transfer_front.data)), $(size(transfer_dz.data))."
-    
+
     proj = CuArray{Float32}(undef, size(wavefront.data)...)
     projtmp = CuArray{Float32}(undef, size(wavefront.data)...)
 
     fftholo = CUFFT.fftshift(CUFFT.fft(wavefront.data))
-    fftholo .= fftholo.*transfer_front.data
+    fftholo .= fftholo .* transfer_front.data
 
     proj .= fftholo |> CUFFT.ifftshift |> CUFFT.ifft |> (x -> x .* conj.(x)) .|> abs .|> Float32
 
     for i in 2:slices
-        fftholo .= fftholo.*transfer_dz.data
-        projtmp .= fftholo |> CUFFT.ifftshift |> CUFFT.ifft |> (x -> x .* conj.(x)) .|> abs .|> Float32 
+        fftholo .= fftholo .* transfer_dz.data
+        projtmp .= fftholo |> CUFFT.ifftshift |> CUFFT.ifft |> (x -> x .* conj.(x)) .|> abs .|> Float32
         proj .= CUDA.min.(proj, projtmp)
     end
 
@@ -285,21 +282,21 @@ function cu_get_reconst_vol_and_xyprojection(wavefront::CuWavefront{ComplexF32},
     @assert size(wavefront.data) == size(transfer_front.data) == size(transfer_dz.data) "All arrays must have the same size. Got $(size(wavefront.data)), $(size(transfer_front.data)), $(size(transfer_dz.data))."
 
     vol = CuArray{return_type}(undef, size(wavefront.data)..., slices)
-    
-    fftholo = CUFFT.fftshift(CUFFT.fft(wavefront.data))
-    fftholo .= fftholo.*transfer_front.data
 
-    vol[:,:,1] .= _ifft_and_abs(fftholo, return_type)
+    fftholo = CUFFT.fftshift(CUFFT.fft(wavefront.data))
+    fftholo .= fftholo .* transfer_front.data
+
+    vol[:, :, 1] .= _ifft_and_abs(fftholo, return_type)
 
     for i in 2:slices
-        fftholo .= fftholo.*transfer_dz.data
-        vol[:,:,i] .= _ifft_and_abs(fftholo, return_type)
+        fftholo .= fftholo .* transfer_dz.data
+        vol[:, :, i] .= _ifft_and_abs(fftholo, return_type)
     end
 
     xyprojection = CuArray{Float32}(undef, size(wavefront.data)...)
     threads = (32, 32)
     blocks = cld.((size(wavefront.data)[1], size(wavefront.data)[2]), threads)
-    @cuda threads=threads blocks=blocks _cu_get_xy_projection_from_vol!(xyprojection, vol, size(wavefront.data, 1), slices)
-    
+    @cuda threads = threads blocks = blocks _cu_get_xy_projection_from_vol!(xyprojection, vol, size(wavefront.data, 1), slices)
+
     return vol, xyprojection
 end
