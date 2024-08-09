@@ -25,9 +25,9 @@ makedocs(;
         "Usage" => Any[
             "Preprocessings" => "usage/preprocessings.md",
             "Volume reconstruction" => "usage/reconstruction.md",
-            "Particle detection" => "usage/particle_detection.md",
-            "Particle tracking" => "usage/particle_tracking.md",
-            "Types" => "usage/types.md",
+            # "Particle detection" => "usage/particle_detection.md",
+            # "Particle tracking" => "usage/particle_tracking.md",
+            # "Types" => "usage/types.md",
         ],
         "Reference" => "reference.md",
     ],
