@@ -48,3 +48,13 @@ A struct that holds the data for the low pass filter. This can be multiplied wit
 struct CuLowPassFilter{T<:AbstractFloat}
     data::CuArray{T,2}
 end
+
+# インデックス操作のためのメソッド定義
+for Type in (:CuTransferSqrtPart, :CuTransfer, :CuWavefront, :CuLowPassFilter)
+    @eval begin
+        Base.getindex(obj::$Type, i::Integer, j::Integer) = obj.data[i, j]
+        Base.setindex!(obj::$Type, v, i::Integer, j::Integer) = (obj.data[i, j] = v)
+        Base.size(obj::$Type) = size(obj.data)
+        Base.length(obj::$Type) = length(obj.data)
+    end
+end
