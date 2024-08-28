@@ -20,7 +20,7 @@ makedocs(;
         "Tutorials" => Any[
             "Gabor holography" => "tutorials/gabor.md",
             "Phase retrieval holography" => "tutorials/pr.md",
-            "Particle handling" => "tutorials/particle.md",
+            "Particle analysis" => "tutorials/particle.md",
         ],
         "Usage" => Any[
             "Preprocessings" => "usage/preprocessings.md",
