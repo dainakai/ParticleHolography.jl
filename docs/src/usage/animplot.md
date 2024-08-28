@@ -1,6 +1,6 @@
 # Animated plots
 
-In [Particle handling](@ref particle_handling), we explained how to plot particles and their trajectories. However, when dealing with time series data, it can be useful to save the temporal evolution as a GIF animation. Below, we provide several examples of how to do this.
+In [Particle analysis](@ref particle_analysis), we explained how to plot particles and their trajectories. However, when dealing with time series data, it can be useful to save the temporal evolution as a GIF animation. Below, we provide several examples of how to do this.
 
 ## Animated ParticlePlot
 
