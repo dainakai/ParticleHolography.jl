@@ -1,4 +1,4 @@
-# [Particle handling](@id particle_handling)
+# [Particle analysis](@id particle_analysis)
 
 This section explains the method of detecting particles from the hologram reconstruction volume, performing particle pairing on time-series data, and tracking particle trajectories.
 
