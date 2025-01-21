@@ -9,15 +9,10 @@ Documentation for [ParticleHolography](https://github.com/dainakai/ParticleHolog
 A package for particle measurement using inline holography.
 
 
-!!! note "Note" 
-
-    This package is under development, and none of the functions are guaranteed to work.
-
-
 ## What you can do with ParticleHolography.jl
 
 - Volume reconstruction from inline holograms using NVIDIA GPUs (CUDA.jl)
-- Detect particles in reconstructed volumes (image stack)
+- Detect particles in the reconstructed volume (image stack)
 - Visualize the particle trajectories
 
 ```@raw html
@@ -39,3 +34,7 @@ A package for particle measurement using inline holography.
 using Pkg
 Pkg.add("ParticleHolography")
 ```
+
+## Demo
+
+For a quick demo, please see the [ParticleHolography.jl demo notebook](https://github.com/dainakai/phdemo)
