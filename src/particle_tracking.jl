@@ -3,13 +3,23 @@ using MetaGraphsNext
 using Graphs
 using UUIDs
 
-export Labonte, enum_edge, append_path!, gen_fulldict
+export Labonte, enum_edge, append_path!, gen_fulldict, node_distance
 
-function node_distance(node1, node2)
-    return sqrt((node1[1] - node2[1])^2 + (node1[2] - node2[2])^2 + (node1[3] - node2[3])^2)
+"""
+    node_distance(node1, node2, dim3weight=0.01)
+
+Calculates the Euclidean distance between two nodes in a 3D space.
+
+# Arguments
+- `node1`: Coordinates of the first node.
+- `node2`: Coordinates of the second node.
+- `dim3weight=0.01`: Scaling factor for the third dimension. For holographic particle tracking, the third dimension is often less accurate than the first two dimensions, so it is scaled down..
+"""
+function node_distance(node1, node2, dim3weight=0.01)
+    return sqrt((node1[1] - node2[1])^2 + (node1[2] - node2[2])^2 + (dim3weight*(node1[3] - node2[3]))^2)
 end
 
-function SOM!(weight1, weight2, Dmax, α, R)
+function SOM!(weight1, weight2, Dmax, α, R, dim3weight)
     Δw = Dict(keys(weight2) .=> [[0.0, 0.0, 0.0]])
     cand_weight2 = []
     for point in weight1
@@ -18,7 +28,7 @@ function SOM!(weight1, weight2, Dmax, α, R)
 
         point_neighbor = []
         for candidate in weight2
-            dist = node_distance(point[2], candidate[2])
+            dist = node_distance(point[2], candidate[2], dim3weight)
             if dist < min_r
                 min_r = dist
                 cand_key = candidate[1]
@@ -32,10 +42,10 @@ function SOM!(weight1, weight2, Dmax, α, R)
         # see Eq.(5) and (6) in "A new neural network for particle-tracking velocimetry" by G. Labonte.
         α_list = Dict()
         for key in point_neighbor
-            if node_distance(weight2[cand_key], weight2[key]) <= R
+            if node_distance(weight2[cand_key], weight2[key], dim3weight) <= R
                 α_list[key] = α
             else
-                α_list[key] = α * exp(-(node_distance(weight2[cand_key], weight2[key]) - R)^2 / (2 * R^2))
+                α_list[key] = α * exp(-(node_distance(weight2[cand_key], weight2[key], dim3weight) - R)^2 / (2 * R^2))
             end
         end
 
@@ -54,7 +64,7 @@ function SOM!(weight1, weight2, Dmax, α, R)
 
         point_neighbor = []
         for candidate in weight1
-            dist = node_distance(point[2], candidate[2])
+            dist = node_distance(point[2], candidate[2], dim3weight)
             if dist < min_r
                 min_r = dist
                 cand_key = candidate[1]
@@ -67,10 +77,10 @@ function SOM!(weight1, weight2, Dmax, α, R)
 
         α_list = Dict()
         for key in point_neighbor
-            if node_distance(weight1[cand_key], weight1[key]) <= R
+            if node_distance(weight1[cand_key], weight1[key], dim3weight) <= R
                 α_list[key] = α
             else
-                α_list[key] = α * exp(-(node_distance(weight1[cand_key], weight1[key]) - R)^2 / (2 * R^2))
+                α_list[key] = α * exp(-(node_distance(weight1[cand_key], weight1[key], dim3weight) - R)^2 / (2 * R^2))
             end
         end
 
@@ -92,7 +102,7 @@ function SOM!(weight1, weight2, Dmax, α, R)
     return Set{UUID}(cand_weight1), Set{UUID}(cand_weight2)
 end
 
-function SOM_iteration!(weight1, weight2, Dmax, α, R, Rend, β, N)
+function SOM_iteration!(weight1, weight2, Dmax, α, R, Rend, β, N, dim3weight=0.01)
     n = 0
     weight1keys = Set(keys(weight1))
     weight2keys = Set(keys(weight2))
@@ -101,7 +111,7 @@ function SOM_iteration!(weight1, weight2, Dmax, α, R, Rend, β, N)
 
     while true
         n += 1
-        cand_weight1, cand_weight2 = SOM!(weight1, weight2, Dmax, α, R)
+        cand_weight1, cand_weight2 = SOM!(weight1, weight2, Dmax, α, R, dim3weight)
 
         complement_weight1 = setdiff(weight1keys, cand_weight1)
         complement_weight2 = setdiff(weight2keys, cand_weight2)
@@ -149,15 +159,15 @@ function two_frame_metagraph(weight1, weight2, file1, file2, Rend)
     g = MetaGraph(
         DiGraph(),
         label_type=UUID,
-        vertex_data_type=NTuple{2,Float64},
+        vertex_data_type=NTuple{3,Float64},
     )
 
     for (key, value) in file1
-        g[key] = Tuple(Float64.(value[1:2]))
+        g[key] = Tuple(Float64.(value[1:3]))
     end
 
     for (key, value) in file2
-        g[key] = Tuple(Float64.(value[1:2]))
+        g[key] = Tuple(Float64.(value[1:3]))
     end
 
     for point1 in weight1
@@ -192,11 +202,17 @@ Implementation of the improved Labonté algorithm [ohmi, labonte](@cite). Takes 
 # Returns
 - `MetaGraph`: Graph representing the correspondence between detected particles at two time points.
 """
-function Labonte(dict1, dict2; Dmax=50.0, α=0.005, R=50.0, Rend=0.1, β=0.9, N=10)
-    weight1 = deepcopy(dict1)
-    weight2 = deepcopy(dict2)
+function Labonte(dict1, dict2; Dmax=50.0, α=0.005, R=50.0, Rend=0.1, β=0.9, N=10, dim3weight=0.01)
+    # weight1 = deepcopy(dict1)
+    # weight2 = deepcopy(dict2)
+    weight1 = Dict(k => v[1:3] for (k, v) in dict1)
+    weight2 = Dict(k => v[1:3] for (k, v) in dict2)
 
-    SOM_iteration!(weight1, weight2, Dmax, α, R, Rend, β, N)
+    if length(weight1) == 0 || length(weight2) == 0
+        return MetaGraph(DiGraph(), label_type=UUID, vertex_data_type=NTuple{3,Float64})
+    end
+
+    SOM_iteration!(weight1, weight2, Dmax, α, R, Rend, β, N, dim3weight)
     g = two_frame_metagraph(weight1, weight2, dict1, dict2, Rend)
     return g
 end
@@ -212,8 +228,8 @@ Enumerates all edges in the given `MetaGraph` `g` and returns them as an array o
 # Returns
 - `Vector{UUID}[]`: An array of arrays of UUIDs, where each inner array contains the labels of the source and destination nodes of an edge.
 """
-function enum_edge(g::MetaGraph)
-    paths = Vector{UUID}[]
+function enum_edge(g::MetaGraph, labeltype=UUID)
+    paths = Vector{labeltype}[]
     for edge in edges(g)
         push!(paths, [label_for(g, edge.src), label_for(g, edge.dst)])
     end

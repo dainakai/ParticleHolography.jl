@@ -6,44 +6,56 @@ using Plots
 
 @testset "ParticleHolography.jl" begin
     # types.jl --------------------------------------------------------------
-    # Test CuTransferSqrtPart struct
     @testset "CuTransferSqrtPart struct" begin
-        # Create CuTransferSqrtPart struct
         data = CUDA.fill(1.0f0, (10, 10))
-        transfer_sqrt_part = ParticleHolography.CuTransferSqrtPart(data)
-
+        transfer_sqrt_part = CuTransferSqrtPart(data)
+    
         # Test fields
         @test transfer_sqrt_part.data == data
+    
+        # Test size, axes, ndims
+        @test size(transfer_sqrt_part) == (10, 10)
+        @test axes(transfer_sqrt_part) == axes(data)
+        @test ndims(transfer_sqrt_part) == 2
     end
-
-    # Test CuTransfer struct
+    
     @testset "CuTransfer struct" begin
-        # Create CuTransfer struct
         data = CUDA.fill(1.0f0 + 1.0f0im, (10, 10))
-        transfer = ParticleHolography.CuTransfer(data)
-
+        transfer = CuTransfer(data)
+    
         # Test fields
         @test transfer.data == data
+    
+        # Test size, axes, ndims
+        @test size(transfer) == (10, 10)
+        @test axes(transfer) == axes(data)
+        @test ndims(transfer) == 2
     end
-
-    # Test CuWavefront struct
+    
     @testset "CuWavefront struct" begin
-        # Create CuWavefront struct
         data = CUDA.fill(1.0f0 + 1.0f0im, (10, 10))
-        wavefront = ParticleHolography.CuWavefront(data)
-
+        wavefront = CuWavefront(data)
+    
         # Test fields
         @test wavefront.data == data
+    
+        # Test size, axes, ndims
+        @test size(wavefront) == (10, 10)
+        @test axes(wavefront) == axes(data)
+        @test ndims(wavefront) == 2
     end
-
-    # Test CuLowPassFilter struct
+    
     @testset "CuLowPassFilter struct" begin
-        # Create CuLowPassFilter struct
         data = CUDA.fill(1.0f0, (10, 10))
-        low_pass_filter = ParticleHolography.CuLowPassFilter(data)
-
+        low_pass_filter = CuLowPassFilter(data)
+    
         # Test fields
         @test low_pass_filter.data == data
+    
+        # Test size, axes, ndims
+        @test size(low_pass_filter) == (10, 10)
+        @test axes(low_pass_filter) == axes(data)
+        @test ndims(low_pass_filter) == 2
     end
 
     # utils.jl --------------------------------------------------------------
@@ -403,4 +415,68 @@ using Plots
 
         @test savefig("./data/trajectory_plot.png") !== nothing
     end
+
+    @testset "Low Pass Filter Tests" begin
+        @testset "cu_rectangle_filter" begin
+            prop_dist = 0.01
+            wavlen    = 5.3e-7
+            imglen    = 128
+            pixel_pitch = 6.5e-6
+    
+            lpf_rect = cu_rectangle_filter(prop_dist, wavlen, imglen, pixel_pitch)
+            @test isa(lpf_rect, CuLowPassFilter)
+            @test size(lpf_rect.data) == (imglen, imglen)
+        end
+
+        @testset "cu_super_gaussian_filter" begin
+            prop_dist = 0.01
+            wavlen    = 5.3e-7
+            imglen    = 128
+            pixel_pitch = 6.5e-6
+    
+            lpf_super = cu_super_gaussian_filter(prop_dist, wavlen, imglen, pixel_pitch)
+            @test isa(lpf_super, CuLowPassFilter)
+            @test size(lpf_super.data) == (imglen, imglen)
+        end
+    
+        @testset "cu_apply_low_pass_filter!" begin
+            holo_data = zeros(ComplexF32, 128, 128)
+            for i in 1:128, j in 1:128
+                holo_data[i, j] = ComplexF32(i + j, i - j)
+            end
+            holo = CuWavefront(cu(holo_data))
+
+            lpf_data = CUDA.ones(Float32, 128, 128)
+            lpf = CuLowPassFilter(lpf_data)
+
+            original_data = copy(holo.data)
+    
+            cu_apply_low_pass_filter!(holo, lpf)
+
+            @test size(holo.data) == (128, 128)
+            @test eltype(holo.data) == ComplexF32
+
+            @test sum(abs.(holo.data .- original_data)) > 1e-7
+        end
+    
+        @testset "cu_apply_low_pass_filter" begin
+            holo_data = zeros(ComplexF32, 128, 128)
+            for i in 1:128, j in 1:128
+                holo_data[i, j] = ComplexF32(i + j, i - j)
+            end
+            holo = CuWavefront(cu(holo_data))
+    
+            lpf_data = CUDA.ones(Float32, 128, 128)
+            lpf = CuLowPassFilter(lpf_data)
+    
+            filtered_holo = cu_apply_low_pass_filter(holo, lpf)
+    
+            @test filtered_holo !== holo
+            @test size(filtered_holo.data) == (128, 128)
+            @test eltype(filtered_holo.data) == ComplexF32
+
+            @test sum(abs.(filtered_holo.data .- holo.data)) > 1e-7
+        end
+    end
+
 end
