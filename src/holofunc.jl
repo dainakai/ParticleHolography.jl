@@ -101,27 +101,36 @@ function cu_phase_retrieval_holo(holo1::CuArray{Float32,2}, holo2::CuArray{Float
 
     light1 = CuArray{ComplexF32}(undef, datlen, datlen)
     light2 = CuArray{ComplexF32}(undef, datlen, datlen)
-    phi1 = CuArray{Float32}(undef, datlen, datlen)
-    phi2 = CuArray{Float32}(undef, datlen, datlen)
+    fft_buffer = CuArray{ComplexF32}(undef, datlen, datlen)
+
+    p_fft = plan_fft(light1)
+    p_ifft = plan_ifft(fft_buffer)
+
     sqrtI1 = sqrt.(holo1)
     sqrtI2 = sqrt.(holo2)
 
     light1 .= sqrtI1 .+ 0.0im
 
     for _ in 1:priter
-        # STEP1
-        light2 .= CUFFT.ifft(CUFFT.ifftshift(CUFFT.fftshift(CUFFT.fft(light1)) .* transfer.data))
-        phi2 .= angle.(light2)
+        # STEP1: Propagate light1 to light2's plane
+        mul!(fft_buffer, p_fft, light1)
+        fftshift!(fft_buffer, fft_buffer)
+        fft_buffer .*= transfer.data
+        ifftshift!(fft_buffer, fft_buffer)
+        mul!(light2, p_ifft, fft_buffer)
 
-        # STEP2
-        light2 .= sqrtI2 .* exp.(1.0im .* phi2)
+        # STEP2: Replace amplitude with sqrtI2, keep phase
+        light2 .= sqrtI2 .* exp.(1.0im .* angle.(light2))
 
-        # STEP3
-        light1 .= CUFFT.ifft(CUFFT.ifftshift(CUFFT.fftshift(CUFFT.fft(light2)) .* invtransfer.data))
-        phi1 .= angle.(light1)
+        # STEP3: Propagate light2 back to light1's plane
+        mul!(fft_buffer, p_fft, light2)
+        fftshift!(fft_buffer, fft_buffer)
+        fft_buffer .*= invtransfer.data
+        ifftshift!(fft_buffer, fft_buffer)
+        mul!(light1, p_ifft, fft_buffer)
 
-        # STEP4
-        light1 .= sqrtI1 .* exp.(1.0im .* phi1)
+        # STEP4: Replace amplitude with sqrtI1, keep phase
+        light1 .= sqrtI1 .* exp.(1.0im .* angle.(light1))
     end
 
     return CuWavefront(light1)
@@ -136,11 +145,14 @@ function _normedfloat_to_N0f8(val::AbstractFloat)
     return reinterpret(N0f8, round(UInt8, clamp(val, 0.0, 1.0) * 255))
 end
 
-function _ifft_and_abs(fftholo, return_type::Type)
+function _ifft_and_abs!(out_slice, fftholo, p_ifft, return_type::Type)
+    mul!(fftholo, p_ifft, fftholo)
+    ifftshift!(fftholo, fftholo)
+
     if return_type in [Float32, Float64, Float16]
-        return fftholo |> CUFFT.ifftshift |> CUFFT.ifft .|> (x -> abs2(x)) .|> (x -> clamp(x, 0.0, 1.0)) .|> return_type
+        out_slice .= clamp.(abs2.(fftholo), 0.0, 1.0)
     elseif return_type == N0f8
-        return fftholo |> CUFFT.ifftshift |> CUFFT.ifft .|> (x -> abs2(x)) .|> (x -> clamp(x, 0.0, 1.0)) .|> _normedfloat_to_N0f8
+        out_slice .= _normedfloat_to_N0f8.(clamp.(abs2.(fftholo), 0.0, 1.0))
     else
         throw(ArgumentError("return_type must be Subtype of AbstractFloat or N0f8. Got $return_type"))
     end
@@ -166,15 +178,19 @@ function cu_get_reconst_vol(wavefront::CuWavefront{ComplexF32}, transfer_front::
     @assert size(wavefront.data) == size(transfer_front.data) == size(transfer_dz.data) "All arrays must have the same size. Got $(size(wavefront.data)), $(size(transfer_front.data)), $(size(transfer_dz.data))."
 
     vol = CuArray{return_type}(undef, size(wavefront.data)..., slices)
+    fftholo = CuArray{ComplexF32}(undef, size(wavefront.data))
+    p_fft = plan_fft(wavefront.data)
+    p_ifft = plan_ifft(fftholo)
 
-    fftholo = CUFFT.fftshift(CUFFT.fft(wavefront.data))
-    fftholo .= fftholo .* transfer_front.data
+    mul!(fftholo, p_fft, wavefront.data)
+    fftshift!(fftholo, fftholo)
+    fftholo .*= transfer_front.data
 
-    vol[:, :, 1] .= _ifft_and_abs(fftholo, return_type)
+    _ifft_and_abs!(@view(vol[:, :, 1]), fftholo, p_ifft, return_type)
 
     for i in 2:slices
-        fftholo .= fftholo .* transfer_dz.data
-        vol[:, :, i] .= _ifft_and_abs(fftholo, return_type)
+        fftholo .*= transfer_dz.data
+        _ifft_and_abs!(@view(vol[:, :, i]), fftholo, p_ifft, return_type)
     end
 
     return vol
