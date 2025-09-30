@@ -63,6 +63,26 @@ function particle_bounding_boxes(d_bin_vol::CuArray{Bool,3})
     return particle_bbs
 end
 
+function particle_bounding_boxes_3d(d_bin_vol::CuArray{Bool,3})
+    @views labeledimg = cu_connected_component_labeling(d_bin_vol[:, :, 1])
+    valid_labels = cu_find_valid_labels(labeledimg)
+    bounding_boxes = get_bounding_rectangles(Array(labeledimg), valid_labels)
+    particle_bbs = gen_particle_neighborhoods(bounding_boxes, 1)
+
+    slices = size(d_bin_vol, 3)
+    if slices > 1
+        for idx in 2:slices
+            @views labeledimg = cu_connected_component_labeling(d_bin_vol[:, :, idx])
+            valid_labels = cu_find_valid_labels(labeledimg)
+            bounding_boxes = get_bounding_rectangles(Array(labeledimg), valid_labels)
+            update_particle_neighborhoods3d!(particle_bbs, bounding_boxes, idx)
+        end
+    end
+
+    finalize_particle_neighborhoods!(particle_bbs)
+    return particle_bbs
+end
+
 """
     tamura(arr)
 

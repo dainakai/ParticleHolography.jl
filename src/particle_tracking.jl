@@ -198,6 +198,7 @@ Implementation of the improved Labonté algorithm [ohmi, labonte](@cite). Takes 
 - `Rend::Float32=0.1`: Final value of the inspection neighborhood radius. The algorithm terminates when the inspection radius becomes smaller than this value through iterations.
 - `β::Float32=0.9`: Decay rate of the inspection neighborhood radius.
 - `N::Int=10`: Nodes that are not selected as winners for N consecutive times are removed. Refer to the original paper for details.
+- `dim3weight::Float32=0.01`: Scaling factor for the third dimension. For holographic particle tracking, the third dimension is often less accurate than the first two dimensions, so it is scaled down.
 
 # Returns
 - `MetaGraph`: Graph representing the correspondence between detected particles at two time points.
