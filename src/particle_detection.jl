@@ -8,6 +8,7 @@ using UUIDs
 export particle_bounding_boxes, particle_coordinates, particle_coor_diams
 export particle_bounding_boxes_3d, cu_dilate
 
+# COV_EXCL_START
 function _cu_dilate_3d!(dilated, vol, datlen, slices)
     x = (blockIdx().x - 1) * blockDim().x + threadIdx().x
     y = (blockIdx().y - 1) * blockDim().y + threadIdx().y
@@ -18,6 +19,7 @@ function _cu_dilate_3d!(dilated, vol, datlen, slices)
     end
     return nothing
 end
+# COV_EXCL_STOP
 
 """
     cu_dilate(vol; blocksize=32)

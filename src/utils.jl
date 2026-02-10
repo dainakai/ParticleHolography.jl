@@ -239,7 +239,7 @@ function make_background(pathlist::Vector{String}; mode=:mode)
     end
 end
 
-
+# COV_EXCL_START
 function _cu_kernel_vote!(votevol, nimg, H, W)
     i = (blockIdx().x - 1) * blockDim().x + threadIdx().x  # row (y)
     j = (blockIdx().y - 1) * blockDim().y + threadIdx().y  # col (x)
@@ -269,7 +269,7 @@ function _cu_kernel_argmax!(out_u8, votevol, H, W, B)
     end
     return
 end
-
+# COV_EXCL_STOP
 
 
 """ 
