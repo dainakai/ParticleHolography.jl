@@ -310,6 +310,18 @@ function new_rect(rect1, rect2)
     return [x_min, y_min, x_max, y_max]
 end
 
+"""
+    update_particle_neighborhoods!(particle_neighborhoods, bounding_rectangles, slicenum)
+
+Updates the particle neighborhoods with new bounding rectangles from a new slice. If a bounding rectangle overlaps with an existing particle neighborhood in the x-y plane, the neighborhood is updated to include the new rectangle and the z-range is adjusted accordingly. If there is no overlap, a new particle neighborhood is created. CAUTION: This function does NOT support multiple particles along the z-axis, and it is recommended to use `update_particle_neighborhoods3d!` instead. If there are multiple particles along the z-axis, they may be merged into one particle neighborhood.
+
+# Arguments
+- `particle_neighborhoods`: The current particle neighborhoods.
+- `bounding_rectangles`: The new bounding rectangles to be added.
+- `slicenum`: The slice number of the new bounding rectangles.
+# Returns
+- `nothing`
+"""
 function update_particle_neighborhoods!(particle_neighborhoods, bounding_rectangles, slicenum)
     rng = MersenneTwister(1234)
 
@@ -328,6 +340,52 @@ function update_particle_neighborhoods!(particle_neighborhoods, bounding_rectang
                 elseif slicenum > item[2][6]
                     item[2][6] = slicenum
                 end
+
+                overlapflag = true
+            end
+        end
+        if !overlapflag
+            uuid = uuid1(rng)
+            particle_neighborhoods[uuid] = [br[1], br[2], slicenum, br[3], br[4], slicenum]
+        end
+    end
+
+    for item in particle_neighborhoods
+        if abs(item[2][1] - item[2][4]) == 1 && abs(item[2][2] - item[2][5]) == 1 && abs(item[2][3] - item[2][6]) == 1
+            delete!(particle_neighborhoods, item[1])
+        end
+    end
+
+    return nothing
+end
+
+
+"""
+    update_particle_neighborhoods3d!(particle_neighborhoods, bounding_rectangles, slicenum)
+Updates the particle neighborhoods with new bounding rectangles from a new slice. If a bounding rectangle overlaps with an existing particle neighborhood in the x-y plane, the neighborhood is updated to include the new rectangle and the z-range is adjusted accordingly. If there is no overlap, a new particle neighborhood is created. This function supports multiple particles along the z-axis.
+
+# Arguments
+- `particle_neighborhoods`: The current particle neighborhoods.
+- `bounding_rectangles`: The new bounding rectangles to be added.
+- `slicenum`: The slice number of the new bounding rectangles.
+# Returns
+- `nothing`
+"""
+function update_particle_neighborhoods3d!(particle_neighborhoods, bounding_rectangles, slicenum)
+    rng = MersenneTwister(1234)
+
+    subpns = filter(((k,v), )-> v[end]==slicenum-1, particle_neighborhoods)
+
+    for br in bounding_rectangles
+        overlapflag = false
+        for item in subpns
+            if judge_overlap2d(br, (item[2][1], item[2][2], item[2][4], item[2][5]))
+                newbr = new_rect(br, (item[2][1], item[2][2], item[2][4], item[2][5]))
+                item[2][1] = newbr[1]
+                item[2][2] = newbr[2]
+                item[2][4] = newbr[3]
+                item[2][5] = newbr[4]
+                item[2][6] = slicenum
 
                 overlapflag = true
             end

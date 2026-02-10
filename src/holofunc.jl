@@ -3,6 +3,7 @@ using CUDA.CUFFT
 using FixedPointNumbers
 
 export cu_transfer_sqrt_arr, cu_transfer, cu_gabor_wavefront, cu_phase_retrieval_holo, cu_get_reconst_vol, cu_get_reconst_xyprojection, cu_get_reconst_vol_and_xyprojection, cu_get_reconst_complex_vol
+export cu_asm_prop!, cu_2d_pad, cu_get_reconst_vol_and_xyprojection_padded
 
 function _cu_transfer_sqrt_arr!(Plane, datLen, wavLen, dx)
     x = (blockIdx().x - 1) * blockDim().x + threadIdx().x
@@ -127,7 +128,25 @@ function cu_phase_retrieval_holo(holo1::CuArray{Float32,2}, holo2::CuArray{Float
     return CuWavefront(light1)
 end
 
+"""
+    cu_2d_pad(inarr)
 
+Pad the 2D CuArray `inarr` with its mean value to double its size in both dimensions.
+
+# Arguments
+- `inarr::CuArray{ComplexF32,2}`: The input 2D CuArray to be padded.
+"""
+function cu_2d_pad(inarr)
+    inlen = size(inarr, 1)
+    outarr = CUDA.zeros(ComplexF32, 2*inlen, 2*inlen)
+    outlen = 2*inlen
+    meaninarr = mean(inarr)
+
+    outarr .= ComplexF32(meaninarr)
+    outarr[(outlen÷4+1):(outlen÷4+inlen), (outlen÷4+1):(outlen÷4+inlen)] .= ComplexF32.(inarr)
+
+    return outarr
+end
 
 
 ########################  Recontruction functions  ########################
@@ -300,3 +319,71 @@ function cu_get_reconst_vol_and_xyprojection(wavefront::CuWavefront{ComplexF32},
 
     return vol, xyprojection
 end
+
+"""
+    cu_get_reconst_vol_and_xyprojection_padded(wavefront, transfer_front, transfer_dz, slices, return_type)
+
+Reconstruct the observation volume from the padded `wavefront` and get the XY projection of the volume using the transfer functions `transfer_front` and `transfer_dz`. `transfer_front` propagates the wavefront to the front of the volume, and `transfer_dz` propagates the wavefront between the slices. `slices` is the number of slices in the volume.
+
+# Arguments
+- `wavefront::CuWavefront{ComplexF32}`: The wavefront to reconstruct. In Gabor's holography, this is the square root of the hologram.
+- `transfer_front::CuTransfer{ComplexF32}`: The transfer function to propagate the wavefront to the front of the volume. See [`CuTransfer`](@ref).
+- `transfer_dz::CuTransfer{ComplexF32}`: The transfer function to propagate the wavefront between the slices.
+- `slices::Int`: The number of slices in the volume.
+- `return_type::Type`: The return type of the reconstructed volume. Default is `N0f8`.
+
+# Returns
+- `CuArray{return_type,3}`: The reconstructed volume.
+- `CuArray{Float32,2}`: The XY projection of the reconstructed volume.
+"""
+function cu_get_reconst_vol_and_xyprojection_padded(wavefront::CuWavefront{ComplexF32}, transfer_front::CuTransfer{ComplexF32}, transfer_dz::CuTransfer{ComplexF32}, slices::Int, return_type::Type=N0f8)
+    expected_size = map(x -> 2 * x, size(wavefront.data))
+    @assert expected_size == size(transfer_front.data) == size(transfer_dz.data) "size(transfer_front.data) and size(transfer_dz.data) must be equal to 2*size(wavefront.data). Got $(size(wavefront.data)), $(size(transfer_front.data)), $(size(transfer_dz.data))."
+
+    datlen = size(wavefront.data, 1)
+    vol = CuArray{N0f8}(undef, datlen, datlen, slices)
+
+    fftholo = CUFFT.fftshift(CUFFT.fft(cu_2d_pad(wavefront.data)))
+    fftholo .= fftholo .* transfer_front.data
+
+    tmparr = _ifft_and_abs(fftholo, return_type)
+    vol[:, :, 1] .= tmparr[div(datlen,2)+1:3*div(datlen,2), div(datlen,2)+1:3*div(datlen,2)]
+
+    for i in 2:slices
+        fftholo .= fftholo .* transfer_dz.data
+        tmparr .= _ifft_and_abs(fftholo, return_type)
+        vol[:, :, i] .= tmparr[div(datlen,2)+1:3*div(datlen,2), div(datlen,2)+1:3*div(datlen,2)]
+    end
+
+    xyprojection = CuArray{Float32}(undef, size(wavefront.data)...)
+    threads = (32, 32)
+    blocks = cld.((size(wavefront.data)[1], size(wavefront.data)[2]), threads)
+    @cuda threads = threads blocks = blocks ParticleHolography._cu_get_xy_projection_from_vol!(xyprojection, vol, size(wavefront.data, 1), slices)
+
+    return vol, xyprojection
+end
+
+
+"""
+    cu_asm_prop!(outholo, inholo, d_sqr, zprop, datlen, λ)
+
+Perform angular spectrum method-based propagation of the wavefront `inholo` by distance `zprop` and store the result in `outholo`. `d_sqr` is the square-root part of the transfer function obtained with `cutransfersqrtarr(datlen, λ, dx)`. `datlen` is the size of the holograms, and `λ` is the wavelength of the light.
+
+# Arguments
+- `outholo::CuWavefront{ComplexF32}`: The output wavefront after propagation. See [`CuWavefront`](@ref).
+- `inholo::CuWavefront{ComplexF32}`: The input wavefront to propagate. See [`CuWavefront`](@ref).
+- `d_sqr::CuTransferSqrtPart{Float32}`: The square-root part of the transfer function obtained with `cutransfersqrtarr(datlen, λ, dx). See [`CuTransferSqrtPart`](@ref).
+- `zprop::Float64`: The distance to propagate the wavefront.
+- `datlen::Int`: The size of the holograms.
+- `λ::Float64`: The wavelength of the light.
+
+# Returns
+- `Nothing`: The result is stored in `outholo`.
+"""
+function cu_asm_prop!(outholo::CuWavefront, inholo::CuWavefront, d_sqr::CuTransferSqrtPart,
+                    zprop::Float64, datlen::Int, λ::Float64)
+    tf = cu_transfer(zprop, datlen, λ, d_sqr)
+    outholo.data .= CUFFT.ifft(CUFFT.ifftshift(CUFFT.fftshift(CUFFT.fft(inholo.data)) .* tf.data))
+    return nothing
+end
+
