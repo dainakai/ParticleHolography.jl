@@ -6,25 +6,35 @@ using HistogramThresholding
 using UUIDs
 
 export particle_bounding_boxes, particle_coordinates, particle_coor_diams
+export particle_bounding_boxes_3d, cu_dilate
 
-function _dilate_3d!(dilated, vol, datlen, slices)
+function _cu_dilate_3d!(dilated, vol, datlen, slices)
     x = (blockIdx().x - 1) * blockDim().x + threadIdx().x
     y = (blockIdx().y - 1) * blockDim().y + threadIdx().y
     z = (blockIdx().z - 1) * blockDim().z + threadIdx().z
 
-    if x > 1 && x < datlen && y > 1 && y < datlen && z > 0 && z <= slices
-        @inbounds dilated[y, x, z] = vol[y-1, x-1, z] || vol[y-1, x, z] || vol[y-1, x+1, z] || vol[y, x-1, z] || vol[y, x, z] || vol[y, x+1, z] || vol[y+1, x-1, z] || vol[y+1, x, z] || vol[y+1, x+1, z]
+    if x>1 && x<datlen && y>1 && y<datlen && z>0 && z<=slices
+        @inbounds dilated[y,x,z] = vol[y-1,x-1,z] || vol[y-1,x,z] || vol[y-1,x+1,z] || vol[y,x-1,z] || vol[y,x,z] || vol[y,x+1,z] || vol[y+1,x-1,z] || vol[y+1,x,z] || vol[y+1,x+1,z]
     end
     return nothing
 end
 
-function cu_dilate(vol::CuArray{Bool,3})
+"""
+    cu_dilate(vol; blocksize=32)
+
+Perform a 3D dilation on the reconstructed image stack `vol` and return the dilated stack.
+
+# Arguments
+- `vol::CuArray{Bool,3}`: The input 3D binary volume to be dilated. It can be the result of thresholding a reconstructed volume.
+- `blocksize::Int`: The block size for CUDA kernel execution. Default is 32.
+"""
+function cu_dilate(vol::CuArray{Bool,3}; blocksize=32)
     datlen = size(vol, 1)
     slices = size(vol, 3)
     dilated = CUDA.fill(false, (datlen, datlen, slices))
-    threads = (32, 32, 1)
+    threads = (blocksize, blocksize, 1)
     blocks = cld.((datlen, datlen, slices), threads)
-    @cuda threads = threads blocks = blocks _dilate_3d!(dilated, vol, datlen, slices)
+    @cuda threads=threads blocks=blocks _cu_dilate_3d!(dilated, vol, datlen, slices)
     return dilated
 end
 

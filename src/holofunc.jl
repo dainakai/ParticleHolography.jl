@@ -3,7 +3,7 @@ using CUDA.CUFFT
 using FixedPointNumbers
 
 export cu_transfer_sqrt_arr, cu_transfer, cu_gabor_wavefront, cu_phase_retrieval_holo, cu_get_reconst_vol, cu_get_reconst_xyprojection, cu_get_reconst_vol_and_xyprojection, cu_get_reconst_complex_vol
-export cu_asm_prop!, cu_dilate, cu_2d_pad, cu_get_reconst_vol_and_xyprojection_padded
+export cu_asm_prop!, cu_2d_pad, cu_get_reconst_vol_and_xyprojection_padded
 
 function _cu_transfer_sqrt_arr!(Plane, datLen, wavLen, dx)
     x = (blockIdx().x - 1) * blockDim().x + threadIdx().x
@@ -126,36 +126,6 @@ function cu_phase_retrieval_holo(holo1::CuArray{Float32,2}, holo2::CuArray{Float
     end
 
     return CuWavefront(light1)
-end
-
-function _cu_dilate_3d!(dilated, vol, datlen, slices)
-    x = (blockIdx().x - 1) * blockDim().x + threadIdx().x
-    y = (blockIdx().y - 1) * blockDim().y + threadIdx().y
-    z = (blockIdx().z - 1) * blockDim().z + threadIdx().z
-
-    if x>1 && x<datlen && y>1 && y<datlen && z>0 && z<=slices
-        @inbounds dilated[y,x,z] = vol[y-1,x-1,z] || vol[y-1,x,z] || vol[y-1,x+1,z] || vol[y,x-1,z] || vol[y,x,z] || vol[y,x+1,z] || vol[y+1,x-1,z] || vol[y+1,x,z] || vol[y+1,x+1,z]
-    end
-    return nothing
-end
-
-"""
-    cu_dilate(vol; blocksize=32)
-
-Perform a 3D dilation on the reconstructed image stack `vol` and return the dilated stack.
-
-# Arguments
-- `vol::CuArray{Bool,3}`: The input 3D binary volume to be dilated. It can be the result of thresholding a reconstructed volume.
-- `blocksize::Int`: The block size for CUDA kernel execution. Default is 32.
-"""
-function cu_dilate(vol::CuArray{Bool,3}; blocksize=32)
-    datlen = size(vol, 1)
-    slices = size(vol, 3)
-    dilated = CUDA.fill(false, (datlen, datlen, slices))
-    threads = (blocksize, blocksize, 1)
-    blocks = cld.((datlen, datlen, slices), threads)
-    @cuda threads=threads blocks=blocks _cu_dilate_3d!(dilated, vol, datlen, slices)
-    return dilated
 end
 
 """
@@ -367,7 +337,8 @@ Reconstruct the observation volume from the padded `wavefront` and get the XY pr
 - `CuArray{Float32,2}`: The XY projection of the reconstructed volume.
 """
 function cu_get_reconst_vol_and_xyprojection_padded(wavefront::CuWavefront{ComplexF32}, transfer_front::CuTransfer{ComplexF32}, transfer_dz::CuTransfer{ComplexF32}, slices::Int, return_type::Type=N0f8)
-    @assert 2*size(wavefront.data) == size(transfer_front.data) == size(transfer_dz.data) "size(transfer_front.data) and size(transfer_dz.data) must be equal to 2*size(wavefront.data). Got $(size(wavefront.data)), $(size(transfer_front.data)), $(size(transfer_dz.data))."
+    expected_size = map(x -> 2 * x, size(wavefront.data))
+    @assert expected_size == size(transfer_front.data) == size(transfer_dz.data) "size(transfer_front.data) and size(transfer_dz.data) must be equal to 2*size(wavefront.data). Got $(size(wavefront.data)), $(size(transfer_front.data)), $(size(transfer_dz.data))."
 
     datlen = size(wavefront.data, 1)
     vol = CuArray{N0f8}(undef, datlen, datlen, slices)

@@ -3,6 +3,7 @@ using CUDA
 using Test
 using Glob
 using Plots
+using FixedPointNumbers
 
 @testset "ParticleHolography.jl" begin
     # types.jl --------------------------------------------------------------
@@ -71,6 +72,14 @@ using Plots
         @test size(img) == (1024,1024)
     end
 
+    # Test load_grayimg function
+    @testset "load_grayimg function" begin
+        img = load_grayimg("./data/holo1.bmp")
+
+        @test eltype(img) == N0f8
+        @test size(img) == (1024,1024)
+    end
+
     # Test find_external_contours function
     @testset "find_external_contours function" begin
         # Test find_external_contours function
@@ -110,6 +119,22 @@ using Plots
         # Test return size
         @test size(background) == (1024,1024)
         @test size(background2) == (1024,1024)
+    end
+
+    # Test cu_make_background_mode function
+    @testset "cu_make_background_mode function" begin
+        img1 = UInt8[10 20; 30 40]
+        img2 = UInt8[10 25; 30 45]
+        img3 = UInt8[10 20; 30 40]
+
+        background = cu_make_background_mode([img1, img2, img3])
+
+        @test size(background) == (2, 2)
+        @test eltype(background) == Float64
+        @test isapprox(background[1, 1], 10 / 255; atol=1e-6)
+        @test isapprox(background[1, 2], 20 / 255; atol=1e-6)
+        @test isapprox(background[2, 1], 30 / 255; atol=1e-6)
+        @test isapprox(background[2, 2], 40 / 255; atol=1e-6)
     end
 
     # Test pad_with_mean function
@@ -204,6 +229,18 @@ using Plots
 
         # Test return length
         @test length(valid_labels) == 84
+    end
+
+    # Test update_particle_neighborhoods3d! function
+    @testset "update_particle_neighborhoods3d! function" begin
+        particle_bbs = ParticleHolography.gen_particle_neighborhoods([(1, 1, 3, 3)], 1)
+        ParticleHolography.update_particle_neighborhoods3d!(particle_bbs, [(2, 2, 4, 4), (10, 10, 12, 12)], 2)
+
+        @test length(particle_bbs) == 2
+
+        vals = collect(values(particle_bbs))
+        @test any(v -> v == [1, 1, 1, 4, 4, 2], vals)
+        @test any(v -> v == [10, 10, 2, 12, 12, 2], vals)
     end
 
     # bundleadjustment.jl --------------------------------------------------------------
@@ -310,6 +347,52 @@ using Plots
         @test cu_get_reconst_vol_and_xyprojection(wf, transfer, transferslice, 10) !== nothing
     end
 
+    @testset "cu_dilate function" begin
+        host_vol = falses(5, 5, 1)
+        host_vol[3, 3, 1] = true
+        vol = cu(host_vol)
+
+        dilated = cu_dilate(vol)
+        dilated_host = Array(dilated)
+
+        @test size(dilated_host) == (5, 5, 1)
+        @test sum(dilated_host) == 9
+    end
+
+    @testset "cu_2d_pad function" begin
+        arr = CuArray(ComplexF32[1 + 1im 2 + 1im; 3 + 1im 4 + 1im])
+        padded = cu_2d_pad(arr)
+
+        @test size(padded) == (4, 4)
+        @test Array(padded)[2:3, 2:3] == Array(arr)
+    end
+
+    @testset "cu_get_reconst_vol_and_xyprojection_padded function" begin
+        holo = CUDA.rand(Float32, (4, 4))
+        wf = cu_gabor_wavefront(holo)
+        transsqr = cu_transfer_sqrt_arr(8, 0.6328, 10.0)
+        transfer = cu_transfer(-100.0, 8, 0.6328, transsqr)
+        transferslice = cu_transfer(-10.0, 8, 0.6328, transsqr)
+
+        vol, xyprojection = cu_get_reconst_vol_and_xyprojection_padded(wf, transfer, transferslice, 2)
+
+        @test size(vol) == (4, 4, 2)
+        @test size(xyprojection) == (4, 4)
+        @test eltype(vol) == N0f8
+        @test eltype(xyprojection) == Float32
+    end
+
+    @testset "cu_asm_prop! function" begin
+        inholo = CuWavefront(CUDA.ones(ComplexF32, 4, 4))
+        outholo = CuWavefront(CUDA.zeros(ComplexF32, 4, 4))
+        transsqr = cu_transfer_sqrt_arr(4, 0.6328, 10.0)
+
+        cu_asm_prop!(outholo, inholo, transsqr, 100.0, 4, 0.6328)
+
+        @test size(outholo.data) == (4, 4)
+        @test sum(abs.(Array(outholo.data))) > 0
+    end
+
     # particle_detection.jl --------------------------------------------------------------
     @testset "particle detection functions" begin
         λ = 0.6328 # Wavelength [μm]
@@ -354,6 +437,19 @@ using Plots
         d_vol = nothing
         d_lpf_vol = nothing
         d_bin_vol = nothing
+    end
+
+    @testset "particle_bounding_boxes_3d function" begin
+        datlen = 6
+        slices = 3
+        d_bin_vol = CUDA.fill(false, (datlen, datlen, slices))
+        for z in 1:slices
+            d_bin_vol[1:4, 1:5, z] .= true
+        end
+
+        particle_bbs = ParticleHolography.particle_bounding_boxes_3d(d_bin_vol)
+        @test length(particle_bbs) == 1
+        @test first(values(particle_bbs)) == [1, 1, 1, 5, 4, 3]
     end
 
     # particle_tracking.jl --------------------------------------------------------------
