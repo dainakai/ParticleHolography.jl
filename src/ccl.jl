@@ -183,9 +183,9 @@ end
 - `output_img::CuArray{UInt32, 2}`: Output labeled image.
 
 """
-function cu_connected_component_labeling(input_img)
+function cu_connected_component_labeling!(output_img::CuArray{UInt32,2}, input_img)
     @assert length(input_img) <= 2^32 - 1 "Image is too large. Maximum length is 2^32-1."
-    output_img = CUDA.zeros(UInt32, size(input_img))
+    @assert size(output_img) == size(input_img) "Input and output images must have the same size."
 
     height, width = size(input_img)
 
@@ -208,6 +208,11 @@ function cu_connected_component_labeling(input_img)
     @cuda threads = block blocks = grid resolve_background(output_img, input_img, width, height)
 
     return output_img
+end
+
+function cu_connected_component_labeling(input_img)
+    output_img = CUDA.zeros(UInt32, size(input_img))
+    return cu_connected_component_labeling!(output_img, input_img)
 end
 
 function count_labels(labels)
@@ -237,6 +242,59 @@ function cu_find_valid_labels(labels::CuArray{UInt32,2})
     return Array(findall(!iszero, d_indices))
 end
 
+function _get_bounding_rectangles!(
+    labels::AbstractMatrix{UInt32},
+    x_min::Vector{Int},
+    y_min::Vector{Int},
+    x_max::Vector{Int},
+    y_max::Vector{Int},
+    label_stamp::Vector{UInt32},
+    touched_labels::Vector{Int},
+    stamp::UInt32
+)
+    height, width = size(labels)
+    empty!(touched_labels)
+
+    @inbounds for j in 1:width
+        for i in 1:height
+            label = labels[i, j]
+            if label != 0
+                label_idx = Int(label)
+                if label_stamp[label_idx] != stamp
+                    label_stamp[label_idx] = stamp
+                    x_min[label_idx] = j
+                    y_min[label_idx] = i
+                    x_max[label_idx] = j
+                    y_max[label_idx] = i
+                    push!(touched_labels, label_idx)
+                else
+                    x_min[label_idx] = min(x_min[label_idx], j)
+                    y_min[label_idx] = min(y_min[label_idx], i)
+                    x_max[label_idx] = max(x_max[label_idx], j)
+                    y_max[label_idx] = max(y_max[label_idx], i)
+                end
+            end
+        end
+    end
+
+    bounding_boxes = Vector{NTuple{4,Int}}(undef, length(touched_labels))
+    @inbounds for (i, label_idx) in pairs(touched_labels)
+        bounding_boxes[i] = (x_min[label_idx], y_min[label_idx], x_max[label_idx], y_max[label_idx])
+    end
+    return bounding_boxes
+end
+
+function get_bounding_rectangles(labels::Array{UInt32,2})
+    nlabels = length(labels) + 1
+    x_min = Vector{Int}(undef, nlabels)
+    y_min = Vector{Int}(undef, nlabels)
+    x_max = Vector{Int}(undef, nlabels)
+    y_max = Vector{Int}(undef, nlabels)
+    label_stamp = zeros(UInt32, nlabels)
+    touched_labels = Int[]
+    return _get_bounding_rectangles!(labels, x_min, y_min, x_max, y_max, label_stamp, touched_labels, UInt32(1))
+end
+
 function get_bounding_rectangles(labels::Array{UInt32,2}, valid_labels::Vector{Int64})
     height, width = size(labels)
     label_to_index = Dict(l => i for (i, l) in enumerate(valid_labels))
@@ -250,7 +308,7 @@ function get_bounding_rectangles(labels::Array{UInt32,2}, valid_labels::Vector{I
     # Iterate through the labels array once
     for j in 1:width, i in 1:height
         label = labels[i, j]
-        if haskey(label_to_index, label)
+        if label != 0 && haskey(label_to_index, label)
             idx = label_to_index[label]
             x_min[idx] = min(x_min[idx], j)
             y_min[idx] = min(y_min[idx], i)

@@ -55,19 +55,40 @@ Additionally, this processing may have some effects, such as slightly elongating
 # Returns
 - `Dict{UUID, Vector{Int}}`: The bounding boxes of the particles.
 """
-function particle_bounding_boxes(d_bin_vol::CuArray{Bool,3})
-    @views labeledimg = cu_connected_component_labeling(d_bin_vol[:, :, 1])
-    valid_labels = cu_find_valid_labels(labeledimg)
-    bounding_boxes = get_bounding_rectangles(Array(labeledimg), valid_labels)
+function _particle_bounding_boxes_impl(d_bin_vol::CuArray{Bool,3}, update_fn!::F) where {F<:Function}
+    _, _, slices = size(d_bin_vol)
+    @assert slices >= 1 "d_bin_vol must contain at least one slice."
+
+    h_labeled = Array{UInt32}(undef, size(d_bin_vol, 1), size(d_bin_vol, 2))
+    d_labeled = CUDA.zeros(UInt32, size(d_bin_vol, 1), size(d_bin_vol, 2))
+    nlabels = length(h_labeled) + 1
+    x_min = Vector{Int}(undef, nlabels)
+    y_min = Vector{Int}(undef, nlabels)
+    x_max = Vector{Int}(undef, nlabels)
+    y_max = Vector{Int}(undef, nlabels)
+    label_stamp = zeros(UInt32, nlabels)
+    touched_labels = Int[]
+    stamp = UInt32(0)
+
+    @views cu_connected_component_labeling!(d_labeled, d_bin_vol[:, :, 1])
+    copyto!(h_labeled, d_labeled)
+    stamp += UInt32(1)
+    bounding_boxes = _get_bounding_rectangles!(h_labeled, x_min, y_min, x_max, y_max, label_stamp, touched_labels, stamp)
     particle_bbs = gen_particle_neighborhoods(bounding_boxes, 1)
 
-    slices = size(d_bin_vol, 3)
     if slices > 1
         for idx in 2:slices
-            @views labeledimg = cu_connected_component_labeling(d_bin_vol[:, :, idx])
-            valid_labels = cu_find_valid_labels(labeledimg)
-            bounding_boxes = get_bounding_rectangles(Array(labeledimg), valid_labels)
-            update_particle_neighborhoods!(particle_bbs, bounding_boxes, idx)
+            @views cu_connected_component_labeling!(d_labeled, d_bin_vol[:, :, idx])
+            copyto!(h_labeled, d_labeled)
+
+            stamp += UInt32(1)
+            if stamp == 0
+                fill!(label_stamp, 0)
+                stamp = UInt32(1)
+            end
+
+            bounding_boxes = _get_bounding_rectangles!(h_labeled, x_min, y_min, x_max, y_max, label_stamp, touched_labels, stamp)
+            update_fn!(particle_bbs, bounding_boxes, idx)
         end
     end
 
@@ -75,24 +96,12 @@ function particle_bounding_boxes(d_bin_vol::CuArray{Bool,3})
     return particle_bbs
 end
 
+function particle_bounding_boxes(d_bin_vol::CuArray{Bool,3})
+    return _particle_bounding_boxes_impl(d_bin_vol, update_particle_neighborhoods!)
+end
+
 function particle_bounding_boxes_3d(d_bin_vol::CuArray{Bool,3})
-    @views labeledimg = cu_connected_component_labeling(d_bin_vol[:, :, 1])
-    valid_labels = cu_find_valid_labels(labeledimg)
-    bounding_boxes = get_bounding_rectangles(Array(labeledimg), valid_labels)
-    particle_bbs = gen_particle_neighborhoods(bounding_boxes, 1)
-
-    slices = size(d_bin_vol, 3)
-    if slices > 1
-        for idx in 2:slices
-            @views labeledimg = cu_connected_component_labeling(d_bin_vol[:, :, idx])
-            valid_labels = cu_find_valid_labels(labeledimg)
-            bounding_boxes = get_bounding_rectangles(Array(labeledimg), valid_labels)
-            update_particle_neighborhoods3d!(particle_bbs, bounding_boxes, idx)
-        end
-    end
-
-    finalize_particle_neighborhoods!(particle_bbs)
-    return particle_bbs
+    return _particle_bounding_boxes_impl(d_bin_vol, update_particle_neighborhoods3d!)
 end
 
 """
@@ -117,14 +126,17 @@ end
 function getcenterfromslice(arr::AbstractArray{<:AbstractFloat,2})
     x = 0.0
     y = 0.0
-    for i in axes(arr, 1)
+    total = 0.0
+    @inbounds for i in axes(arr, 1)
         for j in axes(arr, 2)
-            y += i * arr[i, j]
-            x += j * arr[i, j]
+            v = arr[i, j]
+            total += v
+            y += i * v
+            x += j * v
         end
     end
-    x = x / sum(arr)
-    y = y / sum(arr)
+    x = x / total
+    y = y / total
     return (x, y)
 end
 
@@ -158,8 +170,7 @@ end
 
 function equivalent_diameter(arr::AbstractArray{<:AbstractFloat,2})
     t = find_threshold(arr, HistogramThresholding.Otsu())
-    newarr = arr .<= t
-    return 2 * sqrt(sum(newarr) / π)
+    return 2 * sqrt(count(v -> v <= t, arr) / π)
 end
 
 """
@@ -184,26 +195,31 @@ Calculates the coordinates and diameters of the particles in the reconstructed v
 """
 function particle_coor_diams(particle_bbs::Dict{UUID,Vector{Int}}, d_vol::CuArray{N0f8,3}, d_lpf_vol::Union{CuArray{N0f8,3}, Nothing}=nothing; depth_metrics::Function=tamura, profile_smoothing_kernel=Kernel.gaussian((5,)), diameter_metrics::Function=equivalent_diameter)
     particle_coords = Dict{UUID,Vector{Float32}}()
+    use_lpf = !isnothing(d_lpf_vol)
     for (key, value) in particle_bbs
-        @views subvol = Float32.(d_vol[value[2]:value[5], value[1]:value[4], value[3]:value[6]])
-        if !isnothing(d_lpf_vol)
-            @views subvol_lpf = Float32.(d_lpf_vol[value[2]:value[5], value[1]:value[4], value[3]:value[6]])
+        yrange = value[2]:value[5]
+        xrange = value[1]:value[4]
+        zrange = value[3]:value[6]
+        @views subvol = Float32.(Array(d_vol[yrange, xrange, zrange]))
+
+        if use_lpf
+            lpf_vol = d_lpf_vol::CuArray{N0f8,3}
+            @views subvol_lpf = Float32.(Array(lpf_vol[yrange, xrange, zrange]))
             zmetric = depth_profile(depth_metrics, subvol_lpf)
             imfilter!(zmetric, zmetric, profile_smoothing_kernel)
             z = argmax(zmetric)
-            (x, y) = getcenterfromslice(Array(subvol_lpf[:, :, z]))
-            diam = diameter_metrics(Array(subvol[:, :, z]))
-            particle_coords[key] = [x + value[1] - 1, y + value[2] - 1, z + value[3] - 1, diam]
+            (x, y) = getcenterfromslice(@view(subvol_lpf[:, :, z]))
+            diam = diameter_metrics(@view(subvol[:, :, z]))
+            particle_coords[key] = Float32[x + value[1] - 1, y + value[2] - 1, z + value[3] - 1, diam]
         else
             zmetric = depth_profile(depth_metrics, subvol)
             imfilter!(zmetric, zmetric, profile_smoothing_kernel)
             z = argmax(zmetric)
-            hostsubvol = Array(subvol[:, :, z])
-            (x, y) = getcenterfromslice(hostsubvol)
-            diam = diameter_metrics(hostsubvol)
-            particle_coords[key] = [x + value[1] - 1, y + value[2] - 1, z + value[3] - 1, diam]
+            hostslice = @view(subvol[:, :, z])
+            (x, y) = getcenterfromslice(hostslice)
+            diam = diameter_metrics(hostslice)
+            particle_coords[key] = Float32[x + value[1] - 1, y + value[2] - 1, z + value[3] - 1, diam]
         end
     end
     return particle_coords
 end
-
