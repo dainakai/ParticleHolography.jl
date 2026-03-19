@@ -375,11 +375,16 @@ using FixedPointNumbers
         transferslice = cu_transfer(-10.0, 8, 0.6328, transsqr)
 
         vol, xyprojection = cu_get_reconst_vol_and_xyprojection_padded(wf, transfer, transferslice, 2)
+        vol_f32, xyprojection_f32 = cu_get_reconst_vol_and_xyprojection_padded(wf, transfer, transferslice, 2, Float32)
 
         @test size(vol) == (4, 4, 2)
         @test size(xyprojection) == (4, 4)
         @test eltype(vol) == N0f8
         @test eltype(xyprojection) == Float32
+        @test size(vol_f32) == (4, 4, 2)
+        @test size(xyprojection_f32) == (4, 4)
+        @test eltype(vol_f32) == Float32
+        @test eltype(xyprojection_f32) == Float32
     end
 
     @testset "cu_asm_prop! function" begin
@@ -437,6 +442,44 @@ using FixedPointNumbers
         d_vol = nothing
         d_lpf_vol = nothing
         d_bin_vol = nothing
+    end
+
+    @testset "particle detection voxel type compatibility" begin
+        datlen = 8
+        slices = 5
+
+        d_bin_vol = CUDA.fill(false, (datlen, datlen, slices))
+        d_bin_vol[2:6, 2:6, 2:4] .= true
+        particle_bbs = particle_bounding_boxes(d_bin_vol)
+
+        @test length(particle_bbs) == 1
+
+        d_vol_f32 = CUDA.fill(1.0f0, (datlen, datlen, slices))
+        d_vol_f32[2:6, 2:6, 2:4] .= 0.2f0
+
+        d_lpf_vol_u8 = CUDA.fill(UInt8(255), (datlen, datlen, slices))
+        d_lpf_vol_u8[2:6, 2:6, 2:4] .= UInt8(32)
+
+        d_vol_u16 = CUDA.fill(UInt16(1000), (datlen, datlen, slices))
+        d_vol_u16[2:6, 2:6, 2:4] .= UInt16(100)
+
+        particle_coords_f32 = particle_coordinates(particle_bbs, d_vol_f32)
+        particle_coor_diams_mixed = particle_coor_diams(particle_bbs, d_vol_f32, d_lpf_vol_u8)
+        particle_coords_u16 = particle_coordinates(particle_bbs, d_vol_u16)
+
+        particle_key = first(keys(particle_bbs))
+        @test haskey(particle_coords_f32, particle_key)
+        @test length(particle_coords_f32[particle_key]) == 3
+        @test haskey(particle_coor_diams_mixed, particle_key)
+        @test length(particle_coor_diams_mixed[particle_key]) == 4
+        @test haskey(particle_coords_u16, particle_key)
+        @test length(particle_coords_u16[particle_key]) == 3
+
+        d_complex_vol = CUDA.fill(ComplexF32(1.0f0), (datlen, datlen, slices))
+        @test_throws ArgumentError particle_coordinates(particle_bbs, d_bin_vol)
+        @test_throws ArgumentError particle_coordinates(particle_bbs, d_complex_vol)
+        @test_throws ArgumentError particle_coor_diams(particle_bbs, d_vol_f32, d_bin_vol)
+        @test_throws ArgumentError particle_coor_diams(particle_bbs, d_vol_f32, d_complex_vol)
     end
 
     @testset "particle_bounding_boxes_3d function" begin

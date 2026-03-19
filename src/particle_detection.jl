@@ -128,22 +128,50 @@ function getcenterfromslice(arr::AbstractArray{<:AbstractFloat,2})
     return (x, y)
 end
 
+function _validate_particle_volume_type(T::Type, argname::String)
+    if T <: Bool
+        throw(ArgumentError("`$argname` must contain real-valued intensity voxels. Bool is not supported."))
+    elseif !(T <: Real)
+        throw(ArgumentError("`$argname` must contain real-valued intensity voxels (for example N0f8, Float32, UInt8, UInt16). Got element type $T."))
+    end
+    return nothing
+end
+
+function _validate_particle_volume_pair(d_vol::CuArray{T,3}, d_lpf_vol) where {T}
+    _validate_particle_volume_type(T, "d_vol")
+    if isnothing(d_lpf_vol)
+        return nothing
+    end
+
+    if !(d_lpf_vol isa CuArray{<:Any,3})
+        throw(ArgumentError("`d_lpf_vol` must be `nothing` or `CuArray{<:Any,3}`. Got $(typeof(d_lpf_vol))."))
+    end
+
+    _validate_particle_volume_type(eltype(d_lpf_vol), "d_lpf_vol")
+    if size(d_lpf_vol) != size(d_vol)
+        throw(ArgumentError("`d_lpf_vol` must have the same size as `d_vol`. Got $(size(d_lpf_vol)) and $(size(d_vol))."))
+    end
+
+    return nothing
+end
+
 
 """
     particle_coordinates(particle_bbs, d_vol; depth_metrics = tamura, profile_smoothing_kernel = Kernel.gaussian(5,))
 
-Calculates the coordinates of the particles in the reconstructed volume with the bounding boxe dictionary. The depth of the particles is the maximum of the profile that is calculated using the `depth_metrics` function at each slice of the bounding box. The profile is then smoothed using the `profile_smoothing_kernel`. The x and y coordinates are calculated by finding the center of mass of the slice with the detected depth. The low pass filtered volume would be better for coordinate detection.
+Calculates the coordinates of the particles in the reconstructed volume with the bounding boxe dictionary. The depth of the particles is the maximum of the profile that is calculated using the `depth_metrics` function at each slice of the bounding box. The profile is then smoothed using the `profile_smoothing_kernel`. The x and y coordinates are calculated by finding the center of mass of the slice with the detected depth. The low pass filtered volume would be better for coordinate detection. The extracted subvolume is converted to `Float32` internally before evaluating metrics.
 
 # Arguments
 - `particle_bbs::Dict{UUID, Vector{Int}}`: The bounding boxes of the particles.
-- `d_vol::CuArray{N0f8, 3}`: The reconstructed volume.
+- `d_vol::CuArray{T, 3}`: The reconstructed volume. Real-valued voxel types such as `N0f8`, `Float32`, `UInt8`, and `UInt16` are supported. `Bool` and complex inputs are rejected.
 - `depth_metrics::Function = tamura`: The function that calculates the depth profile of the particles.
 - `profile_smoothing_kernel = Kernel.gaussian((5,))`: The kernel used for smoothing the depth profile.
 
 # Returns
 - `Dict{UUID, Vector{Float32}}`: The coordinates of the particles.
 """
-function particle_coordinates(particle_bbs::Dict{UUID,Vector{Int}}, d_vol::CuArray{N0f8,3}; depth_metrics::Function=tamura, profile_smoothing_kernel=Kernel.gaussian((5,)))
+function particle_coordinates(particle_bbs::Dict{UUID,Vector{Int}}, d_vol::CuArray{T,3}; depth_metrics::Function=tamura, profile_smoothing_kernel=Kernel.gaussian((5,))) where {T}
+    _validate_particle_volume_type(T, "d_vol")
     particle_coords = Dict{UUID,Vector{Float32}}()
     for (key, value) in particle_bbs
         @views subvol = Float32.(d_vol[value[2]:value[5], value[1]:value[4], value[3]:value[6]])
@@ -165,14 +193,14 @@ end
 """
     particle_coor_diams(particle_bbs, d_vol, d_lpf_vol = nothing; depth_metrics = tamura, profile_smoothing_kernel = Kernel.gaussian(5,), diameter_metrics = equivalent_diameter)
 
-Calculates the coordinates and diameters of the particles in the reconstructed volume with the bounding boxe dictionary. The depth of the particles is the maximum of the profile that is calculated using the `depth_metrics` function at each slice of the bounding box. The profile is then smoothed using the `profile_smoothing_kernel`. The x and y coordinates are calculated by finding the center of mass of the slice with the detected depth. The low pass filtered volume would be better for coordinate detection. The diameter of the particles is calculated using the `diameter_metrics` function. If the low pass filtered volume is provided, the coordinate is calculated using the low pass filtered volume.
+Calculates the coordinates and diameters of the particles in the reconstructed volume with the bounding boxe dictionary. The depth of the particles is the maximum of the profile that is calculated using the `depth_metrics` function at each slice of the bounding box. The profile is then smoothed using the `profile_smoothing_kernel`. The x and y coordinates are calculated by finding the center of mass of the slice with the detected depth. The low pass filtered volume would be better for coordinate detection. The diameter of the particles is calculated using the `diameter_metrics` function. If the low pass filtered volume is provided, the coordinate is calculated using the low pass filtered volume. The extracted subvolumes are converted to `Float32` internally before evaluating metrics.
 
 # Arguments
 - `particle_bbs::Dict{UUID, Vector{Int}}`: The bounding boxes of the particles.
-- `d_vol::CuArray{N0f8, 3}`: The reconstructed volume.
+- `d_vol::CuArray{T, 3}`: The reconstructed volume. Real-valued voxel types such as `N0f8`, `Float32`, `UInt8`, and `UInt16` are supported. `Bool` and complex inputs are rejected.
 
 # Optional arguments
-- `d_lpf_vol::Union{CuArray{N0f8,3}, Nothing} = nothing`: The low pass filtered volume.
+- `d_lpf_vol = nothing`: The low pass filtered volume. When provided, it must be a 3D `CuArray` with a real-valued element type and the same size as `d_vol`.
 
 # Optional keyword arguments
 - `depth_metrics::Function = tamura`: The function that calculates the depth profile of the particles.
@@ -182,7 +210,8 @@ Calculates the coordinates and diameters of the particles in the reconstructed v
 # Returns
 - `Dict{UUID, Vector{Float32}}`: The coordinates and diameters of the particles.
 """
-function particle_coor_diams(particle_bbs::Dict{UUID,Vector{Int}}, d_vol::CuArray{N0f8,3}, d_lpf_vol::Union{CuArray{N0f8,3}, Nothing}=nothing; depth_metrics::Function=tamura, profile_smoothing_kernel=Kernel.gaussian((5,)), diameter_metrics::Function=equivalent_diameter)
+function particle_coor_diams(particle_bbs::Dict{UUID,Vector{Int}}, d_vol::CuArray{T,3}, d_lpf_vol=nothing; depth_metrics::Function=tamura, profile_smoothing_kernel=Kernel.gaussian((5,)), diameter_metrics::Function=equivalent_diameter) where {T}
+    _validate_particle_volume_pair(d_vol, d_lpf_vol)
     particle_coords = Dict{UUID,Vector{Float32}}()
     for (key, value) in particle_bbs
         @views subvol = Float32.(d_vol[value[2]:value[5], value[1]:value[4], value[3]:value[6]])
@@ -206,4 +235,3 @@ function particle_coor_diams(particle_bbs::Dict{UUID,Vector{Int}}, d_vol::CuArra
     end
     return particle_coords
 end
-
