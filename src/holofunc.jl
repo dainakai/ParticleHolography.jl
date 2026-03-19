@@ -341,7 +341,7 @@ function cu_get_reconst_vol_and_xyprojection_padded(wavefront::CuWavefront{Compl
     @assert expected_size == size(transfer_front.data) == size(transfer_dz.data) "size(transfer_front.data) and size(transfer_dz.data) must be equal to 2*size(wavefront.data). Got $(size(wavefront.data)), $(size(transfer_front.data)), $(size(transfer_dz.data))."
 
     datlen = size(wavefront.data, 1)
-    vol = CuArray{N0f8}(undef, datlen, datlen, slices)
+    vol = CuArray{return_type}(undef, datlen, datlen, slices)
 
     fftholo = CUFFT.fftshift(CUFFT.fft(cu_2d_pad(wavefront.data)))
     fftholo .= fftholo .* transfer_front.data
@@ -386,4 +386,3 @@ function cu_asm_prop!(outholo::CuWavefront, inholo::CuWavefront, d_sqr::CuTransf
     outholo.data .= CUFFT.ifft(CUFFT.ifftshift(CUFFT.fftshift(CUFFT.fft(inholo.data)) .* tf.data))
     return nothing
 end
-
