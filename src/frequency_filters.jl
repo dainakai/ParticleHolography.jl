@@ -4,6 +4,7 @@ using LinearAlgebra
 
 export cu_rectangle_filter, cu_super_gaussian_filter, cu_apply_low_pass_filter, cu_apply_low_pass_filter!
 
+# COV_EXCL_START
 function _rect_filter!(arr, maxi, datlen)
     x = (blockIdx().x - 1) * blockDim().x + threadIdx().x
     y = (blockIdx().y - 1) * blockDim().y + threadIdx().y
@@ -15,6 +16,7 @@ function _rect_filter!(arr, maxi, datlen)
     end
     return nothing
 end
+# COV_EXCL_STOP
 
 """
     cu_rectangle_filter(prop_dist::AbstractFloat, wavlen::AbstractFloat, imglen::Int, pixel_picth::AbstractFloat)
@@ -40,6 +42,7 @@ function cu_rectangle_filter(prop_dist::AbstractFloat, wavlen::AbstractFloat, im
     return CuLowPassFilter(arr)
 end
 
+# COV_EXCL_START
 function _super_gaussian_filter!(out, σ_x, datlen, dx)
     x = (blockIdx().x - 1) * blockDim().x + threadIdx().x
     y = (blockIdx().y - 1) * blockDim().y + threadIdx().y
@@ -51,6 +54,7 @@ function _super_gaussian_filter!(out, σ_x, datlen, dx)
     end
     return nothing
 end
+# COV_EXCL_STOP
 
 """
     cu_super_gaussian_filter(prop_dist::AbstractFloat, wavlen::AbstractFloat, imglen::Int, pixel_picth::AbstractFloat)

@@ -46,6 +46,24 @@ const DATA_DIR = joinpath(@__DIR__, "data")
         end
     end
 
+    @testset "array wrapper traits" begin
+        wrappers = (
+            CuTransferSqrtPart(fill(1.0f0, 2, 3)),
+            CuTransfer(fill(ComplexF32(1, 0), 2, 3)),
+            CuWavefront(fill(ComplexF32(1, 0), 2, 3)),
+            CuLowPassFilter(fill(1.0f0, 2, 3)),
+        )
+
+        for wrapper in wrappers
+            @test size(wrapper) == (2, 3)
+            @test axes(wrapper) == (Base.OneTo(2), Base.OneTo(3))
+            @test ndims(wrapper) == 2
+            @test Base.IndexStyle(typeof(wrapper)) == Base.IndexCartesian()
+        end
+        @test eltype(wrappers[1]) == Float32
+        @test eltype(wrappers[2]) == ComplexF32
+    end
+
     @testset "CCL CPU helpers" begin
         labels = UInt32[0 0 3; 0 5 5; 7 7 0]
         rects = ParticleHolography.get_bounding_rectangles(labels, [3, 5, 7])
@@ -136,14 +154,65 @@ const DATA_DIR = joinpath(@__DIR__, "data")
     end
 
     @testset "CPU import CUDA stubs" begin
-        err = try
-            cu_transfer_sqrt_arr(4, 0.6328, 10.0)
-            nothing
-        catch e
-            e
+        stub_names = [
+            :cu_transfer_sqrt_arr,
+            :cu_transfer,
+            :cu_gabor_wavefront,
+            :cu_phase_retrieval_holo,
+            :cu_get_reconst_vol,
+            :cu_get_reconst_xyprojection,
+            :cu_get_reconst_vol_and_xyprojection,
+            :cu_get_reconst_complex_vol,
+            Symbol("cu_asm_prop!"),
+            :cu_2d_pad,
+            :cu_get_reconst_vol_and_xyprojection_padded,
+            :cu_rectangle_filter,
+            :cu_super_gaussian_filter,
+            :cu_apply_low_pass_filter,
+            Symbol("cu_apply_low_pass_filter!"),
+            :cu_connected_component_labeling,
+            :cu_find_valid_labels,
+            :cu_dilate,
+            :cu_make_background_mode,
+            :particle_bounding_boxes,
+            :particle_bounding_boxes_3d,
+            :getPIVMap_GPU,
+            :get_distortion_coefficients,
+        ]
+
+        for name in stub_names
+            err = try
+                getfield(ParticleHolography, name)()
+                nothing
+            catch e
+                e
+            end
+            @test err isa ArgumentError
+            msg = sprint(showerror, err)
+            @test occursin("ParticleHolography.$name requires CUDA", msg)
         end
-        @test err isa ArgumentError
-        @test occursin("requires CUDA", sprint(showerror, err))
+
+        old_functional = ParticleHolography._cuda_functional[]
+        old_status = ParticleHolography._cuda_status_message[]
+        try
+            ParticleHolography._cuda_functional[] = () -> error("probe failure")
+            @test !ParticleHolography._cuda_available()
+            @test occursin("CUDA.functional() failed", ParticleHolography._cuda_status_message[]())
+
+            ParticleHolography._cuda_functional[] = () -> true
+            ParticleHolography._cuda_status_message[] = () -> "CUDA probe succeeded."
+            err = try
+                ParticleHolography._cuda_required_error(:unimplemented_api)
+                nothing
+            catch e
+                e
+            end
+            @test err isa ArgumentError
+            @test occursin("requires a CUDA extension method", sprint(showerror, err))
+        finally
+            ParticleHolography._cuda_functional[] = old_functional
+            ParticleHolography._cuda_status_message[] = old_status
+        end
     end
 end
 

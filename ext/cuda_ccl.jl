@@ -1,6 +1,7 @@
 # CUDA 8-way Connected Component Labelling
 # Please refer to: https://github.com/FolkeV/CUDA_CCL
 
+# COV_EXCL_START
 @inline function find_root(labels, label)
     next = labels[label+1]
 
@@ -117,6 +118,7 @@ function resolve_background(g_labels, g_image, width, height)
 
     return nothing
 end
+# COV_EXCL_STOP
 
 """
     cu_connected_component_labeling(input_img)
@@ -142,6 +144,7 @@ function cu_connected_component_labeling(input_img::CuArray)
     return output_img
 end
 
+# COV_EXCL_START
 function find_indices(labels, indices, length)
     id = threadIdx().x + (blockIdx().x - 1) * blockDim().x
     if id <= length
@@ -151,6 +154,7 @@ function find_indices(labels, indices, length)
     end
     return nothing
 end
+# COV_EXCL_STOP
 
 function cu_find_valid_labels(labels::CuArray{UInt32,2})
     _assert_cuda_functional(:cu_find_valid_labels)

@@ -1,5 +1,6 @@
 using Logging
 
+# COV_EXCL_START
 function CuGetVector!(vecArray::CuDeviceArray{Float32,3}, corArray::CuDeviceArray{Float32,2}, gridNum::Int64, corArrSize::Int64, intrSize::Int64)
     gridIdxx = (blockIdx().x - 1) * blockDim().x + threadIdx().x
     gridIdxy = (blockIdx().y - 1) * blockDim().y + threadIdx().y
@@ -76,6 +77,7 @@ function CuGetCrossCor!(corArray::CuDeviceArray{Float32,2}, img1::CuDeviceArray{
     end
     return nothing
 end
+# COV_EXCL_STOP
 
 function getPIVMap_GPU(image1, image2, imgLen=1024, gridSize=128, intrSize=128, srchSize=256)
     _assert_cuda_functional(:getPIVMap_GPU)

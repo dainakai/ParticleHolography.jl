@@ -1,5 +1,6 @@
 using Test
 using UUIDs
+using Random
 
 @testset "ParticleHolography CUDA extension" begin
     cuda_loaded = try
@@ -33,6 +34,32 @@ using UUIDs
             padded = cu_2d_pad(CuArray(ComplexF32[1 + 1im 2 + 1im; 3 + 1im 4 + 1im]))
             @test size(padded) == (4, 4)
 
+            rect_lpf = cu_rectangle_filter(0.01, 5.3e-7, 4, 6.5e-6)
+            super_lpf = cu_super_gaussian_filter(0.01, 5.3e-7, 4, 6.5e-6)
+            @test rect_lpf isa CuLowPassFilter{Float32}
+            @test super_lpf isa CuLowPassFilter{Float32}
+
+            filtered = cu_apply_low_pass_filter(wf, super_lpf)
+            @test filtered isa CuWavefront{ComplexF32}
+            cu_apply_low_pass_filter!(wf, rect_lpf)
+            @test size(wf.data) == (4, 4)
+
+            complex_vol = cu_get_reconst_complex_vol(wf, transfer, transfer, 2)
+            vol, xyprojection = cu_get_reconst_vol_and_xyprojection(wf, transfer, transfer, 2, Float32)
+            padded_sqrt = cu_transfer_sqrt_arr(8, 0.6328, 10.0)
+            padded_front = cu_transfer(100.0, 8, 0.6328, padded_sqrt)
+            padded_slice = cu_transfer(10.0, 8, 0.6328, padded_sqrt)
+            padded_vol, padded_xyprojection = cu_get_reconst_vol_and_xyprojection_padded(wf, padded_front, padded_slice, 2, Float32)
+            in_wf = CuWavefront(CUDA.ones(ComplexF32, 4, 4))
+            out_wf = CuWavefront(CUDA.zeros(ComplexF32, 4, 4))
+            cu_asm_prop!(out_wf, in_wf, transsqr, 100.0, 4, 0.6328)
+            @test size(complex_vol) == (4, 4, 2)
+            @test size(vol) == (4, 4, 2)
+            @test size(xyprojection) == (4, 4)
+            @test size(padded_vol) == (4, 4, 2)
+            @test size(padded_xyprojection) == (4, 4)
+            @test sum(abs.(Array(out_wf.data))) > 0
+
             bg = cu_make_background_mode([UInt8[10 20; 30 40], UInt8[10 25; 30 45], UInt8[10 20; 30 40]])
             @test size(bg) == (2, 2)
             @test isapprox(bg[1, 1], 10 / 255; atol=1e-6)
@@ -41,6 +68,24 @@ using UUIDs
             host_vol[3, 3, 1] = true
             dilated = cu_dilate(cu(host_vol))
             @test sum(Array(dilated)) == 9
+
+            labels = cu_connected_component_labeling(cu(Bool[1 1 0; 0 1 0; 1 0 1]))
+            valid_labels = cu_find_valid_labels(labels)
+            @test labels isa CuArray{UInt32,2}
+            @test !isempty(valid_labels)
+        end
+
+        @testset "CUDA bundle adjustment smoke" begin
+            Random.seed!(1234)
+            img1 = rand(Float32, 64, 64)
+            img2 = circshift(img1, (-8, -8))
+            piv = ParticleHolography.getPIVMap_GPU(img1, img2, 64, 16, 8, 16)
+            @test size(piv) == (3, 3, 2)
+            @test all(isfinite, piv)
+
+            coeffs = ParticleHolography.get_distortion_coefficients(img1, img2; gridSize=16, intrSize=8, srchSize=16)
+            @test length(coeffs) == 12
+            @test all(isfinite, coeffs)
         end
 
         @testset "phdemo-style 5 frame CUDA smoke" begin
@@ -75,6 +120,8 @@ using UUIDs
                     host_bin_vol[4+frame:8+frame, 5:9, 2:4] .= true
                     particle_bbs = particle_bounding_boxes(cu(host_bin_vol))
                     @test length(particle_bbs) == 1
+                    particle_bbs_3d = particle_bounding_boxes_3d(cu(host_bin_vol))
+                    @test length(particle_bbs_3d) == 1
                     coords = particle_coor_diams(particle_bbs, d_vol; profile_smoothing_kernel=[1.0], diameter_metrics=_ -> 5.0f0)
                     @test length(coords) == 1
 

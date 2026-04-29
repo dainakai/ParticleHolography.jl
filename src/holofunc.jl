@@ -6,6 +6,7 @@ using LinearAlgebra
 export cu_transfer_sqrt_arr, cu_transfer, cu_gabor_wavefront, cu_phase_retrieval_holo, cu_get_reconst_vol, cu_get_reconst_xyprojection, cu_get_reconst_vol_and_xyprojection, cu_get_reconst_complex_vol
 export cu_asm_prop!, cu_2d_pad, cu_get_reconst_vol_and_xyprojection_padded
 
+# COV_EXCL_START
 function _cu_transfer_sqrt_arr!(Plane, datLen, wavLen, dx)
     x = (blockIdx().x - 1) * blockDim().x + threadIdx().x
     y = (blockIdx().y - 1) * blockDim().y + threadIdx().y
@@ -14,6 +15,7 @@ function _cu_transfer_sqrt_arr!(Plane, datLen, wavLen, dx)
     end
     return nothing
 end
+# COV_EXCL_STOP
 
 """
     cu_transfer_sqrt_arr(datlen, wavlen, dx)
@@ -37,6 +39,7 @@ function cu_transfer_sqrt_arr(datlen::Int, wavlen::AbstractFloat, dx::AbstractFl
     return CuTransferSqrtPart(Plane)
 end
 
+# COV_EXCL_START
 function _cu_transfer!(Plane, z0, datLen, wavLen, d_sqr)
     x = (blockIdx().x - 1) * blockDim().x + threadIdx().x
     y = (blockIdx().y - 1) * blockDim().y + threadIdx().y
@@ -45,6 +48,7 @@ function _cu_transfer!(Plane, z0, datLen, wavLen, d_sqr)
     end
     return nothing
 end
+# COV_EXCL_STOP
 
 """
     cu_transfer(z0, datLen, wavLen, d_sqr)
@@ -315,6 +319,7 @@ function cu_get_reconst_xyprojection(wavefront::CuWavefront{ComplexF32}, transfe
     return proj
 end
 
+# COV_EXCL_START
 function _cu_get_xy_projection_from_vol!(Plane, vol, datlen, slices)
     x = (blockIdx().x - 1) * blockDim().x + threadIdx().x
     y = (blockIdx().y - 1) * blockDim().y + threadIdx().y
@@ -330,6 +335,7 @@ function _cu_get_xy_projection_from_vol!(Plane, vol, datlen, slices)
 
     return nothing
 end
+# COV_EXCL_STOP
 
 """
     cu_get_reconst_vol_and_xyprojection(wavefront, transfer_front, transfer_dz, slices, return_type)
