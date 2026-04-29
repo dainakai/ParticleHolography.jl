@@ -1,621 +1,154 @@
 using ParticleHolography
-using CUDA
 using Test
-using Glob
-using Plots
-using FixedPointNumbers
+using UUIDs
+using Statistics
 
-@testset "ParticleHolography.jl" begin
-    # types.jl --------------------------------------------------------------
-    @testset "CuTransferSqrtPart struct" begin
-        data = CUDA.fill(1.0f0, (10, 10))
-        transfer_sqrt_part = CuTransferSqrtPart(data)
-    
-        # Test fields
-        @test transfer_sqrt_part.data == data
-    
-        # Test size, axes, ndims
-        @test size(transfer_sqrt_part) == (10, 10)
-        @test axes(transfer_sqrt_part) == axes(data)
-        @test ndims(transfer_sqrt_part) == 2
-    end
-    
-    @testset "CuTransfer struct" begin
-        data = CUDA.fill(1.0f0 + 1.0f0im, (10, 10))
-        transfer = CuTransfer(data)
-    
-        # Test fields
-        @test transfer.data == data
-    
-        # Test size, axes, ndims
-        @test size(transfer) == (10, 10)
-        @test axes(transfer) == axes(data)
-        @test ndims(transfer) == 2
-    end
-    
-    @testset "CuWavefront struct" begin
-        data = CUDA.fill(1.0f0 + 1.0f0im, (10, 10))
-        wavefront = CuWavefront(data)
-    
-        # Test fields
-        @test wavefront.data == data
-    
-        # Test size, axes, ndims
-        @test size(wavefront) == (10, 10)
-        @test axes(wavefront) == axes(data)
-        @test ndims(wavefront) == 2
-    end
-    
-    @testset "CuLowPassFilter struct" begin
-        data = CUDA.fill(1.0f0, (10, 10))
-        low_pass_filter = CuLowPassFilter(data)
-    
-        # Test fields
-        @test low_pass_filter.data == data
-    
-        # Test size, axes, ndims
-        @test size(low_pass_filter) == (10, 10)
-        @test axes(low_pass_filter) == axes(data)
-        @test ndims(low_pass_filter) == 2
-    end
+const DATA_DIR = joinpath(@__DIR__, "data")
 
-    # utils.jl --------------------------------------------------------------
-    # Test load_gray2float function
-    @testset "load_gray2float function" begin
-        # Test load_gray2float function
-        img = load_gray2float("./data/holo1.bmp")
+@testset "ParticleHolography CPU" begin
+    @testset "image utilities" begin
+        img = load_gray2float(joinpath(DATA_DIR, "holo1.bmp"))
+        @test typeof(img) == Array{Float32,2}
+        @test size(img) == (1024, 1024)
 
-        # Test return type
-        @test typeof(img) == Array{Float32, 2}
+        gray = load_grayimg(joinpath(DATA_DIR, "holo1.bmp"))
+        @test eltype(gray) == ParticleHolography.N0f8
+        @test size(gray) == (1024, 1024)
 
-        # Test return size
-        @test size(img) == (1024,1024)
-    end
-
-    # Test load_grayimg function
-    @testset "load_grayimg function" begin
-        img = load_grayimg("./data/holo1.bmp")
-
-        @test eltype(img) == N0f8
-        @test size(img) == (1024,1024)
-    end
-
-    # Test find_external_contours function
-    @testset "find_external_contours function" begin
-        # Test find_external_contours function
-        img = load_gray2float("./data/binaryparticles.png")
-        contours = find_external_contours(img)
-
-        # Test return type
+        binary = load_gray2float(joinpath(DATA_DIR, "binaryparticles.png"))
+        contours = find_external_contours(binary)
         @test typeof(contours) == Vector{Vector{CartesianIndex}}
-
-        # Test return length
         @test length(contours) == 87
-    end
 
-    # Test draw_contours! function
-    @testset "draw_contours! function" begin
-        # Test draw_contours! function
-        img = load_gray2float("./data/binaryparticles.png")
-        contours = find_external_contours(img)
-        img = zeros(size(img))
-        draw_contours!(img, 1.0, contours)
+        contour_img = zeros(size(binary))
+        draw_contours!(contour_img, 1.0, contours)
+        @test count(==(1.0), contour_img) == 6247
 
-        # Test output
-        @test length(findall(img .== 1.0)) == 6247
-    end
-
-    # Test make_background function
-    @testset "make_background function" begin
-        # Test make_background function
-        pathlist = ["./data/holo1.bmp", "./data/holo2.bmp"]
+        pathlist = [joinpath(DATA_DIR, "holo1.bmp"), joinpath(DATA_DIR, "holo2.bmp")]
         background = make_background(pathlist; mode=:mean)
-        background2 = make_background(pathlist; mode=:mode)
+        background_mode = make_background(pathlist; mode=:mode)
+        @test typeof(background) == Array{Float64,2}
+        @test typeof(background_mode) == Array{Float64,2}
+        @test size(background) == (1024, 1024)
+        @test size(background_mode) == (1024, 1024)
 
-        # Test return type
-        @test typeof(background) == Array{Float64, 2}
-        @test typeof(background2) == Array{Float64, 2}
-
-        # Test return size
-        @test size(background) == (1024,1024)
-        @test size(background2) == (1024,1024)
+        padded = pad_with_mean(img, 2048)
+        @test typeof(padded) == Array{Float32,2}
+        @test size(padded) == (2048, 2048)
     end
 
-    # Test cu_make_background_mode function
-    @testset "cu_make_background_mode function" begin
-        img1 = UInt8[10 20; 30 40]
-        img2 = UInt8[10 25; 30 45]
-        img3 = UInt8[10 20; 30 40]
-
-        background = cu_make_background_mode([img1, img2, img3])
-
-        @test size(background) == (2, 2)
-        @test eltype(background) == Float64
-        @test isapprox(background[1, 1], 10 / 255; atol=1e-6)
-        @test isapprox(background[1, 2], 20 / 255; atol=1e-6)
-        @test isapprox(background[2, 1], 30 / 255; atol=1e-6)
-        @test isapprox(background[2, 2], 40 / 255; atol=1e-6)
+    @testset "dictionary IO" begin
+        dict = Dict(uuid1() => Float32[1, 2, 3], uuid1() => Float32[4, 5, 6, 7])
+        mktemp() do path, io
+            close(io)
+            dictsave(path, dict)
+            @test dictload(path) == dict
+        end
     end
 
-    # Test pad_with_mean function
-    @testset "pad_with_mean function" begin
-        # Test pad_with_mean function
-        img = load_gray2float("./data/holo1.bmp")
-        output_img = pad_with_mean(img, 2048)
+    @testset "CCL CPU helpers" begin
+        labels = UInt32[0 0 3; 0 5 5; 7 7 0]
+        rects = ParticleHolography.get_bounding_rectangles(labels, [3, 5, 7])
+        @test rects == [(3, 1, 3, 1), (2, 2, 3, 2), (1, 3, 2, 3)]
 
-        # Test return type
-        @test typeof(output_img) == Array{Float32, 2}
-
-        # Test return size
-        @test size(output_img) == (2048,2048)
-    end
-
-    # Test dictsave and dictload function
-    @testset "dictsave and dictload functions" begin
-        λ = 0.6328 # Wavelength [μm]
-        Δx = 10.0 # Pixel size [μm]
-        z0 = 80000.0 # Optical distance between the hologram and the front surface of the reconstruction volume [μm]
-        Δz = 100.0 # Optical distance between the reconstructed slices [μm]
-        datlen = 1024 # Data length
-        slices = 1000 # Number of slices
-        pr_dist = 80000.0 # Optical distance between the two holograms [μm]
-        pr_iter = 9
-        threshold = 10/255
-
-        img1 = load_gray2float("./data/holo1.bmp")
-        img2 = load_gray2float("./data/holo2.bmp")
-
-        d_sqr = cu_transfer_sqrt_arr(datlen, λ, Δx)
-        d_tf = cu_transfer(-z0, datlen, λ, d_sqr)
-        d_slice = cu_transfer(-Δz, datlen, λ, d_sqr)
-        d_pr = cu_transfer(pr_dist, datlen, λ, d_sqr)
-        d_pr_inv = cu_transfer(-pr_dist, datlen, λ, d_sqr)
-
-        # Phase retrieval using Gerchberg-Saxton algorithm
-        d_holo = cu_phase_retrieval_holo(cu(img1), cu(img2), d_pr, d_pr_inv, pr_iter, datlen)
-
-        # Reconstruction
-        d_vol = cu_get_reconst_vol(d_holo, d_tf, d_slice, slices)
-
-        # Binarization
-        d_bin_vol = d_vol .<= threshold
-
-        particle_bbs = particle_bounding_boxes(d_bin_vol)
-        particle_coords = particle_coordinates(particle_bbs, d_vol)
-
-        # Save the particle coordinates
-        dictsave("./data/particles.json", particle_coords)
-        d_vol = nothing
-        d_bin_vol = nothing
-
-        loadeddict = dictload("./data/particles.json")
-
-        @test particle_coords == loadeddict
-    end
-
-    # ccl.jl --------------------------------------------------------------
-    # Test cu_connected_component_labeling function
-    @testset "cu_connected_component_labeling function" begin
-        # Test cu_connected_component_labeling function
-        img = load_gray2float("./data/binaryparticles.png")
-        output_img = cu_connected_component_labeling(cu(1.0f0 .-img))
-
-        # Test return type
-        @test typeof(output_img) <: CuArray{UInt32, 2}
-
-        # Test return size
-        @test size(output_img) == (1024,1024)
-    end
-
-    # Test count_labels function
-    @testset "count_labels function" begin
-        # Test count_labels function
-        img = load_gray2float("./data/binaryparticles.png")
-        output_img = cu_connected_component_labeling(cu(1.0f0 .-img))
-
-        # Test output
-        @test count_labels(Array(output_img)) == 84
-    end
-
-    # Test cu_find_valid_labels function
-    @testset "cu_find_valid_labels function" begin
-        # Test cu_find_valid_labels function
-        img = load_gray2float("./data/binaryparticles.png")
-        output_img = cu_connected_component_labeling(cu(1.0f0 .-img))
-        valid_labels = cu_find_valid_labels(output_img)
-
-        # Test return type
-        @test typeof(valid_labels) == Vector{Int64}
-
-        # Test return length
-        @test length(valid_labels) == 84
-    end
-
-    # Test update_particle_neighborhoods3d! function
-    @testset "update_particle_neighborhoods3d! function" begin
         particle_bbs = ParticleHolography.gen_particle_neighborhoods([(1, 1, 3, 3)], 1)
         ParticleHolography.update_particle_neighborhoods3d!(particle_bbs, [(2, 2, 4, 4), (10, 10, 12, 12)], 2)
-
-        @test length(particle_bbs) == 2
-
         vals = collect(values(particle_bbs))
+        @test length(particle_bbs) == 2
         @test any(v -> v == [1, 1, 1, 4, 4, 2], vals)
         @test any(v -> v == [10, 10, 2, 12, 12, 2], vals)
     end
 
-    # bundleadjustment.jl --------------------------------------------------------------
-    # Test get_distortion_coefficients function
-    @testset "get_distortion_coefficients function" begin
-        # Test get_distortion_coefficients function
-        img1 = load_gray2float("./data/impcam1_enhanced.png")
-        img2 = load_gray2float("./data/impcam2_enhanced.png")
-        coeffs = get_distortion_coefficients(img1, img2, verbose=true, save_dir="./data")
+    @testset "particle coordinate helpers on CPU arrays" begin
+        id = uuid1()
+        particle_bbs = Dict(id => [2, 2, 1, 4, 4, 3])
+        vol = fill(1.0f0, 5, 5, 3)
+        vol[2:4, 2:4, 2] .= 0.25f0
+        coords = particle_coordinates(particle_bbs, vol; profile_smoothing_kernel=[1.0])
+        coor_diams = particle_coor_diams(particle_bbs, vol; profile_smoothing_kernel=[1.0], diameter_metrics=_ -> 1.0f0)
 
-        # Test return type
-        @test typeof(coeffs) == Array{Float64,1}
-
-        # Test return length
-        @test length(coeffs) == 12
-
-        # Test output
-        @test isapprox(coeffs[1], 1.23, atol=1e-2)
+        @test haskey(coords, id)
+        @test length(coords[id]) == 3
+        @test haskey(coor_diams, id)
+        @test length(coor_diams[id]) == 4
+        @test_throws ArgumentError particle_coordinates(particle_bbs, falses(5, 5, 3))
+        @test_throws ArgumentError particle_coordinates(particle_bbs, fill(1.0f0 + 0im, 5, 5, 3))
     end
 
-    # Test quadratic_distortion_correction function
-    @testset "quadratic_distortion_correction function" begin
-        # Test quadratic_distortion_correction function
-        img1 = load_gray2float("./data/impcam1_enhanced.png")
-        img2 = load_gray2float("./data/impcam2_enhanced.png")
-        coeffs = get_distortion_coefficients(img1, img2, verbose=false)
-        corrected_img = quadratic_distortion_correction(img2, coeffs)
-
-        # Test return type
-        @test typeof(corrected_img) == Array{Float64,2}
-
-        # Test return size
-        @test size(corrected_img) == (1024,1024)
-    end
-
-    # holofunc.jl --------------------------------------------------------------
-    # Test cu_transfer_sqrt_arr function
-    @testset "cu_transfer_sqrt_arr function" begin
-        # Test cu_transfer_sqrt_arr function
-        transfer_sqrt_arr = cu_transfer_sqrt_arr(1024, 0.6328, 10.0)
-
-        # Test return type
-        @test typeof(transfer_sqrt_arr) == ParticleHolography.CuTransferSqrtPart{Float32}
-
-        # Test return size
-        @test size(transfer_sqrt_arr.data) == (1024,1024)
-    end
-
-    # Test cu_transfer function
-    @testset "cu_transfer function" begin
-        # Test cu_transfer function
-        transfer_sqrt_arr = cu_transfer_sqrt_arr(1024, 0.6328, 10.0)
-        transfer = cu_transfer(80000.0, 1024, 0.6328, transfer_sqrt_arr)
-
-        # Test return type
-        @test typeof(transfer) == ParticleHolography.CuTransfer{ComplexF32}
-
-        # Test return size
-        @test size(transfer.data) == (1024,1024)
-    end
-
-    # Test cu_gabor_wavefront function
-    @testset "cu_gabor_wavefront function" begin
-        # Test cu_gabor_wavefront function
-        holo = CUDA.rand(Float32, (1024,1024))
-        wavefront = cu_gabor_wavefront(holo)
-
-        # Test return type
-        @test typeof(wavefront) == ParticleHolography.CuWavefront{ComplexF32}
-
-        # Test return size
-        @test size(wavefront.data) == (1024,1024)
-    end
-
-    # Test cu_phase_retrieval_holo function
-    @testset "cu_phase_retrieval_holo function" begin
-        # Test cu_phase_retrieval_holo function
-        holo1 = load_gray2float("./data/holo1.bmp")
-        holo2 = load_gray2float("./data/holo2_corrected.png")
-        transsqr = cu_transfer_sqrt_arr(1024, 0.6328, 10.0)
-        transfer = cu_transfer(80000.0, 1024, 0.6328, transsqr)
-        transferinv = cu_transfer(-80000.0, 1024, 0.6328, transsqr)
-        d_pr_wf = cu_phase_retrieval_holo(cu(holo1), cu(holo2), transfer, transferinv, 20, 1024)
-
-        # Test return type
-        @test typeof(d_pr_wf) == ParticleHolography.CuWavefront{ComplexF32}
-
-        # Test return size
-        @test size(d_pr_wf.data) == (1024,1024)
-    end
-
-    # Test reconstruction functions
-    @testset "reconstruction functions" begin
-        # Test reconstruction functions
-        holo = load_gray2float("./data/holo1.bmp")
-        wf = cu_gabor_wavefront(cu(holo))
-        transsqr = cu_transfer_sqrt_arr(1024, 0.6328, 10.0)
-        transfer = cu_transfer(-80000.0, 1024, 0.6328, transsqr)
-        transferslice = cu_transfer(-100.0, 1024, 0.6328, transsqr)
-
-        @test cu_get_reconst_vol(wf, transfer, transferslice, 10) !== nothing
-        @test cu_get_reconst_complex_vol(wf, transfer, transferslice, 10) !== nothing
-        @test cu_get_reconst_xyprojection(wf, transfer, transferslice, 10) !== nothing
-        @test cu_get_reconst_vol_and_xyprojection(wf, transfer, transferslice, 10) !== nothing
-    end
-
-    @testset "cu_dilate function" begin
-        host_vol = falses(5, 5, 1)
-        host_vol[3, 3, 1] = true
-        vol = cu(host_vol)
-
-        dilated = cu_dilate(vol)
-        dilated_host = Array(dilated)
-
-        @test size(dilated_host) == (5, 5, 1)
-        @test sum(dilated_host) == 9
-    end
-
-    @testset "cu_2d_pad function" begin
-        arr = CuArray(ComplexF32[1 + 1im 2 + 1im; 3 + 1im 4 + 1im])
-        padded = cu_2d_pad(arr)
-
-        @test size(padded) == (4, 4)
-        @test Array(padded)[2:3, 2:3] == Array(arr)
-    end
-
-    @testset "cu_get_reconst_vol_and_xyprojection_padded function" begin
-        holo = CUDA.rand(Float32, (4, 4))
-        wf = cu_gabor_wavefront(holo)
-        transsqr = cu_transfer_sqrt_arr(8, 0.6328, 10.0)
-        transfer = cu_transfer(-100.0, 8, 0.6328, transsqr)
-        transferslice = cu_transfer(-10.0, 8, 0.6328, transsqr)
-
-        vol, xyprojection = cu_get_reconst_vol_and_xyprojection_padded(wf, transfer, transferslice, 2)
-        vol_f32, xyprojection_f32 = cu_get_reconst_vol_and_xyprojection_padded(wf, transfer, transferslice, 2, Float32)
-
-        @test size(vol) == (4, 4, 2)
-        @test size(xyprojection) == (4, 4)
-        @test eltype(vol) == N0f8
-        @test eltype(xyprojection) == Float32
-        @test size(vol_f32) == (4, 4, 2)
-        @test size(xyprojection_f32) == (4, 4)
-        @test eltype(vol_f32) == Float32
-        @test eltype(xyprojection_f32) == Float32
-    end
-
-    @testset "cu_asm_prop! function" begin
-        inholo = CuWavefront(CUDA.ones(ComplexF32, 4, 4))
-        outholo = CuWavefront(CUDA.zeros(ComplexF32, 4, 4))
-        transsqr = cu_transfer_sqrt_arr(4, 0.6328, 10.0)
-
-        cu_asm_prop!(outholo, inholo, transsqr, 100.0, 4, 0.6328)
-
-        @test size(outholo.data) == (4, 4)
-        @test sum(abs.(Array(outholo.data))) > 0
-    end
-
-    # particle_detection.jl --------------------------------------------------------------
-    @testset "particle detection functions" begin
-        λ = 0.6328 # Wavelength [μm]
-        Δx = 10.0 # Pixel size [μm]
-        z0 = 80000.0 # Optical distance between the hologram and the front surface of the reconstruction volume [μm]
-        Δz = 100.0 # Optical distance between the reconstructed slices [μm]
-        datlen = 1024 # Data length
-        slices = 1000 # Number of slices
-        pr_dist = 80000.0 # Optical distance between the two holograms [μm]
-        pr_iter = 9
-        threshold = 30/255
-
-        img1 = load_gray2float("./data/holo1.bmp")
-        img2 = load_gray2float("./data/holo2.bmp")
-
-        d_sqr = cu_transfer_sqrt_arr(datlen, λ, Δx)
-        d_tf = cu_transfer(-z0, datlen, λ, d_sqr)
-        d_slice = cu_transfer(-Δz, datlen, λ, d_sqr)
-        d_pr = cu_transfer(pr_dist, datlen, λ, d_sqr)
-        d_pr_inv = cu_transfer(-pr_dist, datlen, λ, d_sqr)
-
-        # Phase retrieval using Gerchberg-Saxton algorithm
-        d_holo = cu_phase_retrieval_holo(cu(img1), cu(img2), d_pr, d_pr_inv, pr_iter, datlen)
-
-        # Reconstruction
-        d_vol = cu_get_reconst_vol(d_holo, d_tf, d_slice, slices)
-
-        # Low pass filtering and Reconstruction
-        d_lpf = cu_super_gaussian_filter(pr_dist, λ, datlen, Δx)
-        cu_apply_low_pass_filter!(d_holo, d_lpf)
-
-        d_lpf_vol = cu_get_reconst_vol(d_holo, d_tf, d_slice, slices)
-
-        # Binarization
-        d_bin_vol = d_vol .<= threshold
-
-        particle_bbs = particle_bounding_boxes(d_bin_vol)
-        @test particle_bbs !== nothing
-        @test particle_coordinates(particle_bbs, d_vol) !== nothing
-        @test particle_coor_diams(particle_bbs, d_vol, d_lpf_vol) !== nothing
-
-        d_vol = nothing
-        d_lpf_vol = nothing
-        d_bin_vol = nothing
-    end
-
-    @testset "particle detection voxel type compatibility" begin
-        datlen = 8
-        slices = 5
-
-        d_bin_vol = CUDA.fill(false, (datlen, datlen, slices))
-        d_bin_vol[2:6, 2:6, 2:4] .= true
-        particle_bbs = particle_bounding_boxes(d_bin_vol)
-
-        @test length(particle_bbs) == 1
-
-        d_vol_f32 = CUDA.fill(1.0f0, (datlen, datlen, slices))
-        d_vol_f32[2:6, 2:6, 2:4] .= 0.2f0
-
-        d_lpf_vol_u8 = CUDA.fill(UInt8(255), (datlen, datlen, slices))
-        d_lpf_vol_u8[2:6, 2:6, 2:4] .= UInt8(32)
-
-        d_vol_u16 = CUDA.fill(UInt16(1000), (datlen, datlen, slices))
-        d_vol_u16[2:6, 2:6, 2:4] .= UInt16(100)
-
-        particle_coords_f32 = particle_coordinates(particle_bbs, d_vol_f32)
-        particle_coor_diams_mixed = particle_coor_diams(particle_bbs, d_vol_f32, d_lpf_vol_u8)
-        particle_coords_u16 = particle_coordinates(particle_bbs, d_vol_u16)
-
-        particle_key = first(keys(particle_bbs))
-        @test haskey(particle_coords_f32, particle_key)
-        @test length(particle_coords_f32[particle_key]) == 3
-        @test haskey(particle_coor_diams_mixed, particle_key)
-        @test length(particle_coor_diams_mixed[particle_key]) == 4
-        @test haskey(particle_coords_u16, particle_key)
-        @test length(particle_coords_u16[particle_key]) == 3
-
-        d_complex_vol = CUDA.fill(ComplexF32(1.0f0), (datlen, datlen, slices))
-        @test_throws ArgumentError particle_coordinates(particle_bbs, d_bin_vol)
-        @test_throws ArgumentError particle_coordinates(particle_bbs, d_complex_vol)
-        @test_throws ArgumentError particle_coor_diams(particle_bbs, d_vol_f32, d_bin_vol)
-        @test_throws ArgumentError particle_coor_diams(particle_bbs, d_vol_f32, d_complex_vol)
-    end
-
-    @testset "particle_bounding_boxes_3d function" begin
-        datlen = 6
-        slices = 3
-        d_bin_vol = CUDA.fill(false, (datlen, datlen, slices))
-        for z in 1:slices
-            d_bin_vol[1:4, 1:5, z] .= true
+    @testset "phdemo-style CPU smoke" begin
+        frame_count = 5
+        datlen = 16
+        raw_frames = [fill(0.45f0 + 0.01f0 * frame, datlen, datlen) for frame in 1:frame_count]
+        for (frame, img) in enumerate(raw_frames)
+            img[4+frame:8+frame, 5+frame:9+frame] .= 0.2f0
         end
+        background = sum(raw_frames) ./ frame_count
+        identity_coeffs = [0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0]
 
-        particle_bbs = ParticleHolography.particle_bounding_boxes_3d(d_bin_vol)
-        @test length(particle_bbs) == 1
-        @test first(values(particle_bbs)) == [1, 1, 1, 5, 4, 3]
+        mktempdir() do dir
+            dict_paths = String[]
+            for frame in 1:frame_count
+                corrected = clamp.(raw_frames[frame] .- background .+ mean(background), 0.0f0, 1.0f0)
+                corrected = quadratic_distortion_correction(corrected, identity_coeffs)
+                @test size(corrected) == (datlen, datlen)
+
+                vol = fill(1.0f0, datlen, datlen, 5)
+                y0 = 4 + frame
+                x0 = 5 + frame
+                vol[y0:y0+4, x0:x0+4, 2:4] .= 0.2f0
+                particle_bbs = particle_bounding_boxes(vol .<= 0.5f0)
+                @test length(particle_bbs) == 1
+
+                coords = particle_coor_diams(particle_bbs, vol; profile_smoothing_kernel=[1.0], diameter_metrics=_ -> 5.0f0)
+                @test length(coords) == 1
+                frame_coords = Dict(uuid4() => first(values(coords)))
+                path = joinpath(dir, "frame_$(lpad(frame, 3, '0')).json")
+                dictsave(path, frame_coords)
+                push!(dict_paths, path)
+            end
+
+            dicts = dictload.(dict_paths)
+            graphs = [Labonte(dict1, dict2; Dmax=10.0, dim3weight=1) for (dict1, dict2) in zip(dicts[1:end-1], dicts[2:end])]
+            paths = enum_edge(graphs[1])
+            for graph in graphs[2:end]
+                append_path!(paths, graph)
+            end
+
+            @test any(path -> length(path) == frame_count, paths)
+            @test length(gen_fulldict(dict_paths)) == frame_count
+        end
     end
 
-    # particle_tracking.jl --------------------------------------------------------------
-    @testset "particle tracking functions" begin
-        # Load the particle coordinates
-        files = glob("./data/dicts/*.json")
-
-        # Convert to dictionary with UUID keys and Float64 values
+    @testset "tracking" begin
+        dict_dir = joinpath(DATA_DIR, "dicts")
+        files = sort(joinpath.(dict_dir, filter(endswith(".json"), readdir(dict_dir))))
         dicts = dictload.(files)
-
         graphs = [Labonte(dict1, dict2) for (dict1, dict2) in zip(dicts[1:end-1], dicts[2:end])]
         @test graphs[1] !== nothing
 
         paths = enum_edge(graphs[1])
-        @test paths !== nothing
-
         for graph in graphs[2:end]
             append_path!(paths, graph)
         end
-
         @test paths !== nothing
-
         @test gen_fulldict(dicts) == gen_fulldict(files)
+        @test node_distance([1, 2, 3], [4, 6, 3]) == 5
     end
 
-    # plot_recipes.jl --------------------------------------------------------------
-    @testset "ParticlePlot" begin
-        # Load the particle coordinates
-        files = glob("./data/dicts/*.json")
-
-        colors = cgrad(:viridis)[LinRange(0, 1, length(files))]
-        plot()
-        for (idx, file) in enumerate(files)
-            data = dictload(file)
-            particleplot!(data, legend = false, scaling=(10.0, 10.0, -100.0), shift=(0.0, 0.0, 1e5), color=colors[idx], xlabel="x [µm]", ylabel="z [µm]", zlabel="y [µm]", xlim=(0,10240), ylim=(0,1e5), zlim=(0,10240))
+    @testset "CPU import CUDA stubs" begin
+        err = try
+            cu_transfer_sqrt_arr(4, 0.6328, 10.0)
+            nothing
+        catch e
+            e
         end
-        
-        @test savefig("./data/particle_trajectories.png") !== nothing
+        @test err isa ArgumentError
+        @test occursin("requires CUDA", sprint(showerror, err))
     end
+end
 
-    @testset "TrajectoryPlot" begin
-        # Load the particle coordinates
-        files = glob("./data/dicts/*.json")[1:5]
-
-        # Convert to dictionary with UUID keys and Float64 values
-        dicts = dictload.(files)
-
-        graphs = [Labonte(dict1, dict2) for (dict1, dict2) in zip(dicts[1:end-1], dicts[2:end])]
-
-        paths = enum_edge(graphs[1])
-
-        for graph in graphs[2:end]
-            append_path!(paths, graph)
-        end
-
-        fulldict = gen_fulldict(dicts)
-
-        trajectoryplot(paths, fulldict)
-
-        @test savefig("./data/trajectory_plot.png") !== nothing
-    end
-
-    @testset "Low Pass Filter Tests" begin
-        @testset "cu_rectangle_filter" begin
-            prop_dist = 0.01
-            wavlen    = 5.3e-7
-            imglen    = 128
-            pixel_pitch = 6.5e-6
-    
-            lpf_rect = cu_rectangle_filter(prop_dist, wavlen, imglen, pixel_pitch)
-            @test isa(lpf_rect, CuLowPassFilter)
-            @test size(lpf_rect.data) == (imglen, imglen)
-        end
-
-        @testset "cu_super_gaussian_filter" begin
-            prop_dist = 0.01
-            wavlen    = 5.3e-7
-            imglen    = 128
-            pixel_pitch = 6.5e-6
-    
-            lpf_super = cu_super_gaussian_filter(prop_dist, wavlen, imglen, pixel_pitch)
-            @test isa(lpf_super, CuLowPassFilter)
-            @test size(lpf_super.data) == (imglen, imglen)
-        end
-    
-        @testset "cu_apply_low_pass_filter!" begin
-            holo_data = zeros(ComplexF32, 128, 128)
-            for i in 1:128, j in 1:128
-                holo_data[i, j] = ComplexF32(i + j, i - j)
-            end
-            holo = CuWavefront(cu(holo_data))
-
-            lpf_data = CUDA.ones(Float32, 128, 128)
-            lpf = CuLowPassFilter(lpf_data)
-
-            original_data = copy(holo.data)
-    
-            cu_apply_low_pass_filter!(holo, lpf)
-
-            @test size(holo.data) == (128, 128)
-            @test eltype(holo.data) == ComplexF32
-
-            @test sum(abs.(holo.data .- original_data)) > 1e-7
-        end
-    
-        @testset "cu_apply_low_pass_filter" begin
-            holo_data = zeros(ComplexF32, 128, 128)
-            for i in 1:128, j in 1:128
-                holo_data[i, j] = ComplexF32(i + j, i - j)
-            end
-            holo = CuWavefront(cu(holo_data))
-    
-            lpf_data = CUDA.ones(Float32, 128, 128)
-            lpf = CuLowPassFilter(lpf_data)
-    
-            filtered_holo = cu_apply_low_pass_filter(holo, lpf)
-    
-            @test filtered_holo !== holo
-            @test size(filtered_holo.data) == (128, 128)
-            @test eltype(filtered_holo.data) == ComplexF32
-
-            @test sum(abs.(filtered_holo.data .- holo.data)) > 1e-7
-        end
-    end
-
+if get(ENV, "PARTICLEHOLOGRAPHY_RUN_GPU_TESTS", "false") == "true"
+    include(joinpath(@__DIR__, "gpu", "runtests.jl"))
+else
+    @info "Skipping GPU tests; set PARTICLEHOLOGRAPHY_RUN_GPU_TESTS=true to run CUDA smoke tests."
 end

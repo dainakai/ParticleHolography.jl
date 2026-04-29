@@ -6,4 +6,4 @@ LiveServer = "16fef848-5104-11e9-1b77-fb7a48bbb589"
 ParticleHolography = "b8f7f481-73e0-42c6-b6bd-c66d3b4942cc"
 
 [compat]
-ParticleHolography = "0.2.2"
+ParticleHolography = "0.3"

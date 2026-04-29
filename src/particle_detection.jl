@@ -1,4 +1,3 @@
-using CUDA
 using FixedPointNumbers
 using Statistics
 using ImageFiltering
@@ -7,93 +6,6 @@ using UUIDs
 
 export particle_bounding_boxes, particle_coordinates, particle_coor_diams
 export particle_bounding_boxes_3d, cu_dilate
-
-# COV_EXCL_START
-function _cu_dilate_3d!(dilated, vol, datlen, slices)
-    x = (blockIdx().x - 1) * blockDim().x + threadIdx().x
-    y = (blockIdx().y - 1) * blockDim().y + threadIdx().y
-    z = (blockIdx().z - 1) * blockDim().z + threadIdx().z
-
-    if x>1 && x<datlen && y>1 && y<datlen && z>0 && z<=slices
-        @inbounds dilated[y,x,z] = vol[y-1,x-1,z] || vol[y-1,x,z] || vol[y-1,x+1,z] || vol[y,x-1,z] || vol[y,x,z] || vol[y,x+1,z] || vol[y+1,x-1,z] || vol[y+1,x,z] || vol[y+1,x+1,z]
-    end
-    return nothing
-end
-# COV_EXCL_STOP
-
-"""
-    cu_dilate(vol; blocksize=32)
-
-Perform a 3D dilation on the reconstructed image stack `vol` and return the dilated stack.
-
-# Arguments
-- `vol::CuArray{Bool,3}`: The input 3D binary volume to be dilated. It can be the result of thresholding a reconstructed volume.
-- `blocksize::Int`: The block size for CUDA kernel execution. Default is 32.
-"""
-function cu_dilate(vol::CuArray{Bool,3}; blocksize=32)
-    datlen = size(vol, 1)
-    slices = size(vol, 3)
-    dilated = CUDA.fill(false, (datlen, datlen, slices))
-    threads = (blocksize, blocksize, 1)
-    blocks = cld.((datlen, datlen, slices), threads)
-    @cuda threads=threads blocks=blocks _cu_dilate_3d!(dilated, vol, datlen, slices)
-    return dilated
-end
-
-
-"""
-    particle_bounding_boxes(d_bin_vol)
-
-Detects the particles in a binary volume and returns the bounding boxes of the particles.
-This function performs three-dimensional element connected labeling on binary volumes. However, please note that it does not perform strict adjacent connectivity in the optical axis (z) direction. Strict adjacent connectivity in the optical axis direction may result in artifacts not being connected, potentially leading to the detection of many ghost particles.
-This function assumes that two particles never overlap at exactly the same X-Y coordinates. All elements that overlap in X-Y coordinates are considered connected. Therefore, this method is not suitable for accurate position detection of particles that overlap in X-Y coordinates.
-Additionally, this processing may have some effects, such as slightly elongating the bounding box of particles in the optical axis direction. However, this has minimal impact on the accuracy of particle position detection.
-
-# Arguments
-- `d_bin_vol::CuArray{Bool, 3}`: The binary volume of reconstructed holographic volume. Binarization can be done by thresholding the reconstructed volume. `true` values represent the particles and neighboring voxels and vice versa.
-
-# Returns
-- `Dict{UUID, Vector{Int}}`: The bounding boxes of the particles.
-"""
-function particle_bounding_boxes(d_bin_vol::CuArray{Bool,3})
-    @views labeledimg = cu_connected_component_labeling(d_bin_vol[:, :, 1])
-    valid_labels = cu_find_valid_labels(labeledimg)
-    bounding_boxes = get_bounding_rectangles(Array(labeledimg), valid_labels)
-    particle_bbs = gen_particle_neighborhoods(bounding_boxes, 1)
-
-    slices = size(d_bin_vol, 3)
-    if slices > 1
-        for idx in 2:slices
-            @views labeledimg = cu_connected_component_labeling(d_bin_vol[:, :, idx])
-            valid_labels = cu_find_valid_labels(labeledimg)
-            bounding_boxes = get_bounding_rectangles(Array(labeledimg), valid_labels)
-            update_particle_neighborhoods!(particle_bbs, bounding_boxes, idx)
-        end
-    end
-
-    finalize_particle_neighborhoods!(particle_bbs)
-    return particle_bbs
-end
-
-function particle_bounding_boxes_3d(d_bin_vol::CuArray{Bool,3})
-    @views labeledimg = cu_connected_component_labeling(d_bin_vol[:, :, 1])
-    valid_labels = cu_find_valid_labels(labeledimg)
-    bounding_boxes = get_bounding_rectangles(Array(labeledimg), valid_labels)
-    particle_bbs = gen_particle_neighborhoods(bounding_boxes, 1)
-
-    slices = size(d_bin_vol, 3)
-    if slices > 1
-        for idx in 2:slices
-            @views labeledimg = cu_connected_component_labeling(d_bin_vol[:, :, idx])
-            valid_labels = cu_find_valid_labels(labeledimg)
-            bounding_boxes = get_bounding_rectangles(Array(labeledimg), valid_labels)
-            update_particle_neighborhoods3d!(particle_bbs, bounding_boxes, idx)
-        end
-    end
-
-    finalize_particle_neighborhoods!(particle_bbs)
-    return particle_bbs
-end
 
 """
     tamura(arr)
@@ -137,14 +49,14 @@ function _validate_particle_volume_type(T::Type, argname::String)
     return nothing
 end
 
-function _validate_particle_volume_pair(d_vol::CuArray{T,3}, d_lpf_vol) where {T}
+function _validate_particle_volume_pair(d_vol::AbstractArray{T,3}, d_lpf_vol) where {T}
     _validate_particle_volume_type(T, "d_vol")
     if isnothing(d_lpf_vol)
         return nothing
     end
 
-    if !(d_lpf_vol isa CuArray{<:Any,3})
-        throw(ArgumentError("`d_lpf_vol` must be `nothing` or `CuArray{<:Any,3}`. Got $(typeof(d_lpf_vol))."))
+    if !(d_lpf_vol isa AbstractArray{<:Any,3})
+        throw(ArgumentError("`d_lpf_vol` must be `nothing` or `AbstractArray{<:Any,3}`. Got $(typeof(d_lpf_vol))."))
     end
 
     _validate_particle_volume_type(eltype(d_lpf_vol), "d_lpf_vol")
@@ -155,6 +67,81 @@ function _validate_particle_volume_pair(d_vol::CuArray{T,3}, d_lpf_vol) where {T
     return nothing
 end
 
+function _cpu_bounding_rectangles_2d(binary_img::AbstractMatrix{Bool})
+    visited = falses(size(binary_img))
+    height, width = size(binary_img)
+    rectangles = NTuple{4,Int}[]
+    neighbors = CartesianIndex[
+        CartesianIndex(-1, -1), CartesianIndex(-1, 0), CartesianIndex(-1, 1),
+        CartesianIndex(0, -1), CartesianIndex(0, 1),
+        CartesianIndex(1, -1), CartesianIndex(1, 0), CartesianIndex(1, 1),
+    ]
+
+    for idx in CartesianIndices(binary_img)
+        if !binary_img[idx] || visited[idx]
+            continue
+        end
+
+        queue = [idx]
+        visited[idx] = true
+        y_min = y_max = idx[1]
+        x_min = x_max = idx[2]
+
+        while !isempty(queue)
+            current = popfirst!(queue)
+            y_min = min(y_min, current[1])
+            y_max = max(y_max, current[1])
+            x_min = min(x_min, current[2])
+            x_max = max(x_max, current[2])
+
+            for delta in neighbors
+                next = current + delta
+                if 1 <= next[1] <= height && 1 <= next[2] <= width && binary_img[next] && !visited[next]
+                    visited[next] = true
+                    push!(queue, next)
+                end
+            end
+        end
+
+        push!(rectangles, (x_min, y_min, x_max, y_max))
+    end
+
+    return rectangles
+end
+
+"""
+    particle_bounding_boxes(d_bin_vol::AbstractArray{Bool,3})
+
+Detect particle neighborhoods from a CPU-resident binary volume. This mirrors
+the CUDA path by labeling each z-slice in 2D and merging overlapping x-y boxes
+across slices.
+"""
+function particle_bounding_boxes(d_bin_vol::AbstractArray{Bool,3})
+    bounding_boxes = _cpu_bounding_rectangles_2d(@view d_bin_vol[:, :, 1])
+    particle_bbs = gen_particle_neighborhoods(bounding_boxes, 1)
+
+    for idx in 2:size(d_bin_vol, 3)
+        bounding_boxes = _cpu_bounding_rectangles_2d(@view d_bin_vol[:, :, idx])
+        update_particle_neighborhoods!(particle_bbs, bounding_boxes, idx)
+    end
+
+    finalize_particle_neighborhoods!(particle_bbs)
+    return particle_bbs
+end
+
+function particle_bounding_boxes_3d(d_bin_vol::AbstractArray{Bool,3})
+    bounding_boxes = _cpu_bounding_rectangles_2d(@view d_bin_vol[:, :, 1])
+    particle_bbs = gen_particle_neighborhoods(bounding_boxes, 1)
+
+    for idx in 2:size(d_bin_vol, 3)
+        bounding_boxes = _cpu_bounding_rectangles_2d(@view d_bin_vol[:, :, idx])
+        update_particle_neighborhoods3d!(particle_bbs, bounding_boxes, idx)
+    end
+
+    finalize_particle_neighborhoods!(particle_bbs)
+    return particle_bbs
+end
+
 
 """
     particle_coordinates(particle_bbs, d_vol; depth_metrics = tamura, profile_smoothing_kernel = Kernel.gaussian(5,))
@@ -163,14 +150,14 @@ Calculates the coordinates of the particles in the reconstructed volume with the
 
 # Arguments
 - `particle_bbs::Dict{UUID, Vector{Int}}`: The bounding boxes of the particles.
-- `d_vol::CuArray{T, 3}`: The reconstructed volume. Real-valued voxel types such as `N0f8`, `Float32`, `UInt8`, and `UInt16` are supported. `Bool` and complex inputs are rejected.
+- `d_vol::AbstractArray{T, 3}`: The reconstructed volume. Real-valued voxel types such as `N0f8`, `Float32`, `UInt8`, and `UInt16` are supported. `Bool` and complex inputs are rejected.
 - `depth_metrics::Function = tamura`: The function that calculates the depth profile of the particles.
 - `profile_smoothing_kernel = Kernel.gaussian((5,))`: The kernel used for smoothing the depth profile.
 
 # Returns
 - `Dict{UUID, Vector{Float32}}`: The coordinates of the particles.
 """
-function particle_coordinates(particle_bbs::Dict{UUID,Vector{Int}}, d_vol::CuArray{T,3}; depth_metrics::Function=tamura, profile_smoothing_kernel=Kernel.gaussian((5,))) where {T}
+function particle_coordinates(particle_bbs::Dict{UUID,Vector{Int}}, d_vol::AbstractArray{T,3}; depth_metrics::Function=tamura, profile_smoothing_kernel=Kernel.gaussian((5,))) where {T}
     _validate_particle_volume_type(T, "d_vol")
     particle_coords = Dict{UUID,Vector{Float32}}()
     for (key, value) in particle_bbs
@@ -197,10 +184,10 @@ Calculates the coordinates and diameters of the particles in the reconstructed v
 
 # Arguments
 - `particle_bbs::Dict{UUID, Vector{Int}}`: The bounding boxes of the particles.
-- `d_vol::CuArray{T, 3}`: The reconstructed volume. Real-valued voxel types such as `N0f8`, `Float32`, `UInt8`, and `UInt16` are supported. `Bool` and complex inputs are rejected.
+- `d_vol::AbstractArray{T, 3}`: The reconstructed volume. Real-valued voxel types such as `N0f8`, `Float32`, `UInt8`, and `UInt16` are supported. `Bool` and complex inputs are rejected.
 
 # Optional arguments
-- `d_lpf_vol = nothing`: The low pass filtered volume. When provided, it must be a 3D `CuArray` with a real-valued element type and the same size as `d_vol`.
+- `d_lpf_vol = nothing`: The low pass filtered volume. When provided, it must be a 3D `AbstractArray` with a real-valued element type and the same size as `d_vol`.
 
 # Optional keyword arguments
 - `depth_metrics::Function = tamura`: The function that calculates the depth profile of the particles.
@@ -210,7 +197,7 @@ Calculates the coordinates and diameters of the particles in the reconstructed v
 # Returns
 - `Dict{UUID, Vector{Float32}}`: The coordinates and diameters of the particles.
 """
-function particle_coor_diams(particle_bbs::Dict{UUID,Vector{Int}}, d_vol::CuArray{T,3}, d_lpf_vol=nothing; depth_metrics::Function=tamura, profile_smoothing_kernel=Kernel.gaussian((5,)), diameter_metrics::Function=equivalent_diameter) where {T}
+function particle_coor_diams(particle_bbs::Dict{UUID,Vector{Int}}, d_vol::AbstractArray{T,3}, d_lpf_vol=nothing; depth_metrics::Function=tamura, profile_smoothing_kernel=Kernel.gaussian((5,)), diameter_metrics::Function=equivalent_diameter) where {T}
     _validate_particle_volume_pair(d_vol, d_lpf_vol)
     particle_coords = Dict{UUID,Vector{Float32}}()
     for (key, value) in particle_bbs

@@ -29,6 +29,7 @@ Create a CuArray of size `datlen` x `datlen` with the values of the square-root 
 - `CuTransferSqrtPart{Float32}`: The square-root part of the transfer function. See [`CuTransferSqrtPart`](@ref).
 """
 function cu_transfer_sqrt_arr(datlen::Int, wavlen::AbstractFloat, dx::AbstractFloat)
+    _assert_cuda_functional(:cu_transfer_sqrt_arr)
     Plane = CuArray{Float32}(undef, datlen, datlen)
     threads = (32, 32)
     blocks = cld.((datlen, datlen), threads)
@@ -60,6 +61,7 @@ Create a CuArray of size `datLen` x `datLen` with the values of the transfer fun
 - `CuTransfer{Float32}`: The transfer function for the propagation. See [`CuTransfer`](@ref).
 """
 function cu_transfer(z0::AbstractFloat, datLen::Int, wavLen::AbstractFloat, d_sqr::CuTransferSqrtPart{Float32})
+    _assert_cuda_functional(:cu_transfer)
     Plane = CuArray{ComplexF32}(undef, datLen, datLen)
     threads = (32, 32)
     blocks = cld.((datLen, datLen), threads)
@@ -79,6 +81,7 @@ Create a wavefront from single hologram `holo`. This is for Gabor holography. Th
 - `CuWavefront{ComplexF32}`: The wavefront created from the hologram. See [`CuWavefront`](@ref).
 """
 function cu_gabor_wavefront(holo::CuArray{Float32,2})
+    _assert_cuda_functional(:cu_gabor_wavefront)
     return CuWavefront(ComplexF32.(sqrt.(holo) .+ 0.0im))
 end
 
@@ -99,6 +102,7 @@ Perform the Gerchberg-Saxton algorithm-based phase retrieving on two holograms a
 - `CuWavefront{ComplexF32}`: The retrieved wavefront at the z-coordinate of `holo1`. See [`CuWavefront`](@ref).
 """
 function cu_phase_retrieval_holo(holo1::CuArray{Float32,2}, holo2::CuArray{Float32,2}, transfer::CuTransfer{ComplexF32}, invtransfer::CuTransfer{ComplexF32}, priter::Int, datlen::Int)
+    _assert_cuda_functional(:cu_phase_retrieval_holo)
     @assert size(holo1) == size(holo2) == size(transfer.data) == size(invtransfer.data) == (datlen, datlen) "All arrays must have the same size as ($datlen, $datlen). Got $(size(holo1)), $(size(holo2)), $(size(transfer.data)), $(size(invtransfer.data))."
 
     light1 = CuArray{ComplexF32}(undef, datlen, datlen)
@@ -148,6 +152,7 @@ Pad the 2D CuArray `inarr` with its mean value to double its size in both dimens
 - `inarr::CuArray{ComplexF32,2}`: The input 2D CuArray to be padded.
 """
 function cu_2d_pad(inarr)
+    _assert_cuda_functional(:cu_2d_pad)
     inlen = size(inarr, 1)
     outarr = CUDA.zeros(ComplexF32, 2*inlen, 2*inlen)
     outlen = 2*inlen
@@ -207,6 +212,7 @@ Reconstruct the observation volume from the `wavefront` using the transfer funct
 - `CuArray{return_type,3}`: The reconstructed intensity volume.
 """
 function cu_get_reconst_vol(wavefront::CuWavefront{ComplexF32}, transfer_front::CuTransfer{ComplexF32}, transfer_dz::CuTransfer{ComplexF32}, slices::Int, return_type::Type=N0f8)
+    _assert_cuda_functional(:cu_get_reconst_vol)
     @assert size(wavefront.data) == size(transfer_front.data) == size(transfer_dz.data) "All arrays must have the same size. Got $(size(wavefront.data)), $(size(transfer_front.data)), $(size(transfer_dz.data))."
 
     vol = CuArray{return_type}(undef, size(wavefront.data)..., slices)
@@ -245,6 +251,7 @@ Reconstruct the observation volume from the `wavefront` using the transfer funct
 - `CuArray{ComplexF32,3}`: The reconstructed complex amplitude volume.
 """
 function cu_get_reconst_complex_vol(wavefront::CuWavefront{ComplexF32}, transfer_front::CuTransfer{ComplexF32}, transfer_dz::CuTransfer{ComplexF32}, slices::Int)
+    _assert_cuda_functional(:cu_get_reconst_complex_vol)
     @assert size(wavefront.data) == size(transfer_front.data) == size(transfer_dz.data) "All arrays must have the same size. Got $(size(wavefront.data)), $(size(transfer_front.data)), $(size(transfer_dz.data))."
 
     vol = CuArray{ComplexF32}(undef, size(wavefront.data)..., slices)
@@ -282,6 +289,7 @@ Get the XY projection of the reconstructed volume from the `wavefront` using the
 - `CuArray{Float32,2}`: The XY projection of the reconstructed volume.
 """
 function cu_get_reconst_xyprojection(wavefront::CuWavefront{ComplexF32}, transfer_front::CuTransfer{ComplexF32}, transfer_dz::CuTransfer{ComplexF32}, slices::Int)
+    _assert_cuda_functional(:cu_get_reconst_xyprojection)
     @assert size(wavefront.data) == size(transfer_front.data) == size(transfer_dz.data) "All arrays must have the same size. Got $(size(wavefront.data)), $(size(transfer_front.data)), $(size(transfer_dz.data))."
 
     proj = CuArray{Float32}(undef, size(wavefront.data)...)
@@ -340,6 +348,7 @@ Reconstruct the observation volume from the `wavefront` and get the XY projectio
 - `CuArray{Float32,2}`: The XY projection of the reconstructed volume.
 """
 function cu_get_reconst_vol_and_xyprojection(wavefront::CuWavefront{ComplexF32}, transfer_front::CuTransfer{ComplexF32}, transfer_dz::CuTransfer{ComplexF32}, slices::Int, return_type::Type=N0f8)
+    _assert_cuda_functional(:cu_get_reconst_vol_and_xyprojection)
     @assert size(wavefront.data) == size(transfer_front.data) == size(transfer_dz.data) "All arrays must have the same size. Got $(size(wavefront.data)), $(size(transfer_front.data)), $(size(transfer_dz.data))."
 
     vol = CuArray{return_type}(undef, size(wavefront.data)..., slices)
@@ -385,6 +394,7 @@ Reconstruct the observation volume from the padded `wavefront` and get the XY pr
 - `CuArray{Float32,2}`: The XY projection of the reconstructed volume.
 """
 function cu_get_reconst_vol_and_xyprojection_padded(wavefront::CuWavefront{ComplexF32}, transfer_front::CuTransfer{ComplexF32}, transfer_dz::CuTransfer{ComplexF32}, slices::Int, return_type::Type=N0f8)
+    _assert_cuda_functional(:cu_get_reconst_vol_and_xyprojection_padded)
     expected_size = map(x -> 2 * x, size(wavefront.data))
     @assert expected_size == size(transfer_front.data) == size(transfer_dz.data) "size(transfer_front.data) and size(transfer_dz.data) must be equal to 2*size(wavefront.data). Got $(size(wavefront.data)), $(size(transfer_front.data)), $(size(transfer_dz.data))."
 
@@ -414,7 +424,7 @@ function cu_get_reconst_vol_and_xyprojection_padded(wavefront::CuWavefront{Compl
     xyprojection = CuArray{Float32}(undef, size(wavefront.data)...)
     threads = (32, 32)
     blocks = cld.((size(wavefront.data)[1], size(wavefront.data)[2]), threads)
-    @cuda threads = threads blocks = blocks ParticleHolography._cu_get_xy_projection_from_vol!(xyprojection, vol, size(wavefront.data, 1), slices)
+    @cuda threads = threads blocks = blocks _cu_get_xy_projection_from_vol!(xyprojection, vol, size(wavefront.data, 1), slices)
 
     return vol, xyprojection
 end
@@ -438,6 +448,7 @@ Perform angular spectrum method-based propagation of the wavefront `inholo` by d
 """
 function cu_asm_prop!(outholo::CuWavefront, inholo::CuWavefront, d_sqr::CuTransferSqrtPart,
                     zprop::Float64, datlen::Int, λ::Float64)
+    _assert_cuda_functional(:cu_asm_prop!)
     tf = cu_transfer(zprop, datlen, λ, d_sqr)
     fft_arr = similar(inholo.data)
     ifft_in = similar(inholo.data)
