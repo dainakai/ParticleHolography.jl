@@ -84,13 +84,22 @@ const DATA_DIR = joinpath(@__DIR__, "data")
         vol[2:4, 2:4, 2] .= 0.25f0
         coords = particle_coordinates(particle_bbs, vol; profile_smoothing_kernel=[1.0])
         coor_diams = particle_coor_diams(particle_bbs, vol; profile_smoothing_kernel=[1.0], diameter_metrics=_ -> 1.0f0)
+        lpf_vol = fill(1.0f0, 5, 5, 3)
+        lpf_vol[2:4, 2:4, 3] .= 0.1f0
+        coor_diams_lpf = particle_coor_diams(particle_bbs, vol, lpf_vol; profile_smoothing_kernel=[1.0], diameter_metrics=_ -> 2.0f0)
 
         @test haskey(coords, id)
         @test length(coords[id]) == 3
         @test haskey(coor_diams, id)
         @test length(coor_diams[id]) == 4
+        @test haskey(coor_diams_lpf, id)
+        @test length(coor_diams_lpf[id]) == 4
         @test_throws ArgumentError particle_coordinates(particle_bbs, falses(5, 5, 3))
         @test_throws ArgumentError particle_coordinates(particle_bbs, fill(1.0f0 + 0im, 5, 5, 3))
+        @test_throws ArgumentError particle_coor_diams(particle_bbs, vol, fill(1.0f0, 5, 5))
+        @test_throws ArgumentError particle_coor_diams(particle_bbs, vol, falses(5, 5, 3))
+        @test_throws ArgumentError particle_coor_diams(particle_bbs, vol, fill(1.0f0 + 0im, 5, 5, 3))
+        @test_throws ArgumentError particle_coor_diams(particle_bbs, vol, fill(1.0f0, 4, 5, 3))
     end
 
     @testset "phdemo-style CPU smoke" begin
@@ -191,6 +200,15 @@ const DATA_DIR = joinpath(@__DIR__, "data")
             msg = sprint(showerror, err)
             @test occursin("ParticleHolography.$name requires CUDA", msg)
         end
+
+        makie_err = try
+            ParticleHolography._save_bundle_adjustment_diagnostics()
+            nothing
+        catch e
+            e
+        end
+        @test makie_err isa ArgumentError
+        @test occursin("require Makie and CairoMakie", sprint(showerror, makie_err))
 
         old_functional = ParticleHolography._cuda_functional[]
         old_status = ParticleHolography._cuda_status_message[]
