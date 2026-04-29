@@ -15,3 +15,20 @@ A package for particle measurement using inline holography. Please refer to the 
 using Pkg
 Pkg.add("ParticleHolography")
 ```
+
+## CPU-only and CUDA use
+
+The core package is importable without CUDA:
+
+```julia
+using ParticleHolography
+```
+
+CPU-side utilities such as image loading, contour helpers, particle dictionary IO, and tracking helpers are available from the core package. GPU APIs whose names start with `cu_` require CUDA.jl and a functional CUDA runtime:
+
+```julia
+using CUDA
+using ParticleHolography
+```
+
+If CUDA is not loaded or `CUDA.functional()` is false, GPU APIs throw an `ArgumentError` explaining the missing CUDA requirement instead of failing during package import.

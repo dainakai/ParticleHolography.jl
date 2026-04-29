@@ -4,6 +4,7 @@ using LinearAlgebra
 
 export cu_rectangle_filter, cu_super_gaussian_filter, cu_apply_low_pass_filter, cu_apply_low_pass_filter!
 
+# COV_EXCL_START
 function _rect_filter!(arr, maxi, datlen)
     x = (blockIdx().x - 1) * blockDim().x + threadIdx().x
     y = (blockIdx().y - 1) * blockDim().y + threadIdx().y
@@ -15,6 +16,7 @@ function _rect_filter!(arr, maxi, datlen)
     end
     return nothing
 end
+# COV_EXCL_STOP
 
 """
     cu_rectangle_filter(prop_dist::AbstractFloat, wavlen::AbstractFloat, imglen::Int, pixel_picth::AbstractFloat)
@@ -31,6 +33,7 @@ Creates a low pass filter with a rectangular window. This can be multiplied with
 - `CuLowPassFilter`: The low pass filter as a CuLowPassFilter object.
 """
 function cu_rectangle_filter(prop_dist::AbstractFloat, wavlen::AbstractFloat, imglen::Int, pixel_picth::AbstractFloat)
+    _assert_cuda_functional(:cu_rectangle_filter)
     arr = CUDA.ones(Float32, (imglen, imglen))
     maxi = 1 / wavlen * imglen^2 * pixel_picth^2 / sqrt(4.0 * prop_dist^2 + imglen^2 * pixel_picth^2)
     threads = (32, 32)
@@ -39,6 +42,7 @@ function cu_rectangle_filter(prop_dist::AbstractFloat, wavlen::AbstractFloat, im
     return CuLowPassFilter(arr)
 end
 
+# COV_EXCL_START
 function _super_gaussian_filter!(out, σ_x, datlen, dx)
     x = (blockIdx().x - 1) * blockDim().x + threadIdx().x
     y = (blockIdx().y - 1) * blockDim().y + threadIdx().y
@@ -50,6 +54,7 @@ function _super_gaussian_filter!(out, σ_x, datlen, dx)
     end
     return nothing
 end
+# COV_EXCL_STOP
 
 """
     cu_super_gaussian_filter(prop_dist::AbstractFloat, wavlen::AbstractFloat, imglen::Int, pixel_picth::AbstractFloat)
@@ -66,6 +71,7 @@ Creates a low pass filter with a super Gaussian window. This can be multiplied w
 - `CuLowPassFilter`: The low pass filter as a CuLowPassFilter object.
 """
 function cu_super_gaussian_filter(prop_dist::AbstractFloat, wavlen::AbstractFloat, imglen::Int, pixel_picth::AbstractFloat)
+    _assert_cuda_functional(:cu_super_gaussian_filter)
     arr = CUDA.zeros(Float32, (imglen, imglen))
     maxi = 1 / wavlen * imglen^2 * pixel_picth^2 / sqrt(4.0 * prop_dist^2 + imglen^2 * pixel_picth^2)
     σ_x = maxi / (imglen * pixel_picth) / (2.0 * log(2.0))^(1 / 6)
@@ -88,6 +94,7 @@ Apply a low pass filter to the wavefront `holo`. The low pass filter is applied 
 - `nothing`
 """
 function cu_apply_low_pass_filter!(holo::CuWavefront, lpf::CuLowPassFilter)
+    _assert_cuda_functional(:cu_apply_low_pass_filter!)
     fft_arr = similar(holo.data)
     ifft_in = similar(holo.data)
     fft_plan = CUFFT.plan_fft(holo.data)
@@ -112,6 +119,7 @@ Apply a low pass filter to the wavefront `holo`. The low pass filter is applied 
 - `CuWavefront{ComplexF32}`: The wavefront after applying the low pass filter.
 """
 function cu_apply_low_pass_filter(holo::CuWavefront, lpf::CuLowPassFilter)
+    _assert_cuda_functional(:cu_apply_low_pass_filter)
     fft_arr = similar(holo.data)
     ifft_in = similar(holo.data)
     filtered = similar(holo.data)
