@@ -105,12 +105,12 @@ function cu_phase_retrieval_holo(holo1::CuArray{Float32,2}, holo2::CuArray{Float
     light2 = CuArray{ComplexF32}(undef, datlen, datlen)
     light1_fft = similar(light1)
     light2_fft = similar(light2)
-    light1_ifft_in = similar(light1)
-    light2_ifft_in = similar(light2)
     phi1 = CuArray{Float32}(undef, datlen, datlen)
     phi2 = CuArray{Float32}(undef, datlen, datlen)
     sqrtI1 = sqrt.(holo1)
     sqrtI2 = sqrt.(holo2)
+    transfer_fft_order = _transfer_fft_order(transfer)
+    invtransfer_fft_order = _transfer_fft_order(invtransfer)
     fft_plan = CUFFT.plan_fft(light1)
     ifft_plan = CUFFT.plan_ifft(light1)
 
@@ -119,8 +119,8 @@ function cu_phase_retrieval_holo(holo1::CuArray{Float32,2}, holo2::CuArray{Float
     for _ in 1:priter
         # STEP1
         LinearAlgebra.mul!(light1_fft, fft_plan, light1)
-        light2_ifft_in .= CUFFT.ifftshift(CUFFT.fftshift(light1_fft) .* transfer.data)
-        LinearAlgebra.mul!(light2, ifft_plan, light2_ifft_in)
+        light1_fft .= light1_fft .* transfer_fft_order
+        LinearAlgebra.mul!(light2, ifft_plan, light1_fft)
         phi2 .= angle.(light2)
 
         # STEP2
@@ -128,8 +128,8 @@ function cu_phase_retrieval_holo(holo1::CuArray{Float32,2}, holo2::CuArray{Float
 
         # STEP3
         LinearAlgebra.mul!(light2_fft, fft_plan, light2)
-        light1_ifft_in .= CUFFT.ifftshift(CUFFT.fftshift(light2_fft) .* invtransfer.data)
-        LinearAlgebra.mul!(light1, ifft_plan, light1_ifft_in)
+        light2_fft .= light2_fft .* invtransfer_fft_order
+        LinearAlgebra.mul!(light1, ifft_plan, light2_fft)
         phi1 .= angle.(light1)
 
         # STEP4
@@ -166,14 +166,17 @@ function _normedfloat_to_N0f8(val::AbstractFloat)
     return reinterpret(N0f8, round(UInt8, clamp(val, 0.0, 1.0) * 255))
 end
 
-function _ifft_from_shifted_fft!(out::AbstractArray{T,2}, fftholo::CuArray{T,2}, ifft_plan, ifft_workspace::CuArray{T,2}) where {T<:Complex}
-    ifft_workspace .= CUFFT.ifftshift(fftholo)
-    LinearAlgebra.mul!(out, ifft_plan, ifft_workspace)
+function _transfer_fft_order(transfer::CuTransfer{T}) where {T<:Complex}
+    return CUFFT.ifftshift(transfer.data)
+end
+
+function _ifft_from_fft_order!(out::AbstractArray{T,2}, fftholo::CuArray{T,2}, ifft_plan) where {T<:Complex}
+    LinearAlgebra.mul!(out, ifft_plan, fftholo)
     return nothing
 end
 
-function _ifft_and_abs!(out::AbstractArray, fftholo::CuArray{T,2}, return_type::Type, ifft_plan, ifft_workspace::CuArray{T,2}, ifft_output::CuArray{T,2}) where {T<:Complex}
-    _ifft_from_shifted_fft!(ifft_output, fftholo, ifft_plan, ifft_workspace)
+function _ifft_and_abs!(out::AbstractArray, fftholo::CuArray{T,2}, return_type::Type, ifft_plan, ifft_output::CuArray{T,2}) where {T<:Complex}
+    _ifft_from_fft_order!(ifft_output, fftholo, ifft_plan)
     if return_type in [Float32, Float64, Float16]
         out .= return_type.(clamp.(abs2.(ifft_output), 0.0, 1.0))
     elseif return_type == N0f8
@@ -184,8 +187,8 @@ function _ifft_and_abs!(out::AbstractArray, fftholo::CuArray{T,2}, return_type::
     return nothing
 end
 
-function _ifft_abs2_float32!(out::AbstractArray{Float32,2}, fftholo::CuArray{T,2}, ifft_plan, ifft_workspace::CuArray{T,2}, ifft_output::CuArray{T,2}) where {T<:Complex}
-    _ifft_from_shifted_fft!(ifft_output, fftholo, ifft_plan, ifft_workspace)
+function _ifft_abs2_float32!(out::AbstractArray{Float32,2}, fftholo::CuArray{T,2}, ifft_plan, ifft_output::CuArray{T,2}) where {T<:Complex}
+    _ifft_from_fft_order!(ifft_output, fftholo, ifft_plan)
     out .= Float32.(abs2.(ifft_output))
     return nothing
 end
@@ -211,20 +214,20 @@ function cu_get_reconst_vol(wavefront::CuWavefront{ComplexF32}, transfer_front::
 
     vol = CuArray{return_type}(undef, size(wavefront.data)..., slices)
     fftholo_fft = similar(wavefront.data)
-    ifft_workspace = similar(wavefront.data)
     ifft_output = similar(wavefront.data)
+    transfer_front_fft_order = _transfer_fft_order(transfer_front)
+    transfer_dz_fft_order = _transfer_fft_order(transfer_dz)
     fft_plan = CUFFT.plan_fft(wavefront.data)
     ifft_plan = CUFFT.plan_ifft(wavefront.data)
 
     LinearAlgebra.mul!(fftholo_fft, fft_plan, wavefront.data)
-    fftholo = CUFFT.fftshift(fftholo_fft)
-    fftholo .= fftholo .* transfer_front.data
+    fftholo_fft .= fftholo_fft .* transfer_front_fft_order
 
-    _ifft_and_abs!(view(vol, :, :, 1), fftholo, return_type, ifft_plan, ifft_workspace, ifft_output)
+    _ifft_and_abs!(view(vol, :, :, 1), fftholo_fft, return_type, ifft_plan, ifft_output)
 
     for i in 2:slices
-        fftholo .= fftholo .* transfer_dz.data
-        _ifft_and_abs!(view(vol, :, :, i), fftholo, return_type, ifft_plan, ifft_workspace, ifft_output)
+        fftholo_fft .= fftholo_fft .* transfer_dz_fft_order
+        _ifft_and_abs!(view(vol, :, :, i), fftholo_fft, return_type, ifft_plan, ifft_output)
     end
 
     return vol
@@ -249,19 +252,19 @@ function cu_get_reconst_complex_vol(wavefront::CuWavefront{ComplexF32}, transfer
 
     vol = CuArray{ComplexF32}(undef, size(wavefront.data)..., slices)
     fftholo_fft = similar(wavefront.data)
-    ifft_workspace = similar(wavefront.data)
+    transfer_front_fft_order = _transfer_fft_order(transfer_front)
+    transfer_dz_fft_order = _transfer_fft_order(transfer_dz)
     fft_plan = CUFFT.plan_fft(wavefront.data)
     ifft_plan = CUFFT.plan_ifft(wavefront.data)
 
     LinearAlgebra.mul!(fftholo_fft, fft_plan, wavefront.data)
-    fftholo = CUFFT.fftshift(fftholo_fft)
-    fftholo .= fftholo .* transfer_front.data
+    fftholo_fft .= fftholo_fft .* transfer_front_fft_order
 
-    _ifft_from_shifted_fft!(view(vol, :, :, 1), fftholo, ifft_plan, ifft_workspace)
+    _ifft_from_fft_order!(view(vol, :, :, 1), fftholo_fft, ifft_plan)
 
     for i in 2:slices
-        fftholo .= fftholo .* transfer_dz.data
-        _ifft_from_shifted_fft!(view(vol, :, :, i), fftholo, ifft_plan, ifft_workspace)
+        fftholo_fft .= fftholo_fft .* transfer_dz_fft_order
+        _ifft_from_fft_order!(view(vol, :, :, i), fftholo_fft, ifft_plan)
     end
 
     return vol
@@ -287,20 +290,20 @@ function cu_get_reconst_xyprojection(wavefront::CuWavefront{ComplexF32}, transfe
     proj = CuArray{Float32}(undef, size(wavefront.data)...)
     projtmp = CuArray{Float32}(undef, size(wavefront.data)...)
     fftholo_fft = similar(wavefront.data)
-    ifft_workspace = similar(wavefront.data)
     ifft_output = similar(wavefront.data)
+    transfer_front_fft_order = _transfer_fft_order(transfer_front)
+    transfer_dz_fft_order = _transfer_fft_order(transfer_dz)
     fft_plan = CUFFT.plan_fft(wavefront.data)
     ifft_plan = CUFFT.plan_ifft(wavefront.data)
 
     LinearAlgebra.mul!(fftholo_fft, fft_plan, wavefront.data)
-    fftholo = CUFFT.fftshift(fftholo_fft)
-    fftholo .= fftholo .* transfer_front.data
+    fftholo_fft .= fftholo_fft .* transfer_front_fft_order
 
-    _ifft_abs2_float32!(proj, fftholo, ifft_plan, ifft_workspace, ifft_output)
+    _ifft_abs2_float32!(proj, fftholo_fft, ifft_plan, ifft_output)
 
     for i in 2:slices
-        fftholo .= fftholo .* transfer_dz.data
-        _ifft_abs2_float32!(projtmp, fftholo, ifft_plan, ifft_workspace, ifft_output)
+        fftholo_fft .= fftholo_fft .* transfer_dz_fft_order
+        _ifft_abs2_float32!(projtmp, fftholo_fft, ifft_plan, ifft_output)
         proj .= CUDA.min.(proj, projtmp)
     end
 
@@ -344,20 +347,20 @@ function cu_get_reconst_vol_and_xyprojection(wavefront::CuWavefront{ComplexF32},
 
     vol = CuArray{return_type}(undef, size(wavefront.data)..., slices)
     fftholo_fft = similar(wavefront.data)
-    ifft_workspace = similar(wavefront.data)
     ifft_output = similar(wavefront.data)
+    transfer_front_fft_order = _transfer_fft_order(transfer_front)
+    transfer_dz_fft_order = _transfer_fft_order(transfer_dz)
     fft_plan = CUFFT.plan_fft(wavefront.data)
     ifft_plan = CUFFT.plan_ifft(wavefront.data)
 
     LinearAlgebra.mul!(fftholo_fft, fft_plan, wavefront.data)
-    fftholo = CUFFT.fftshift(fftholo_fft)
-    fftholo .= fftholo .* transfer_front.data
+    fftholo_fft .= fftholo_fft .* transfer_front_fft_order
 
-    _ifft_and_abs!(view(vol, :, :, 1), fftholo, return_type, ifft_plan, ifft_workspace, ifft_output)
+    _ifft_and_abs!(view(vol, :, :, 1), fftholo_fft, return_type, ifft_plan, ifft_output)
 
     for i in 2:slices
-        fftholo .= fftholo .* transfer_dz.data
-        _ifft_and_abs!(view(vol, :, :, i), fftholo, return_type, ifft_plan, ifft_workspace, ifft_output)
+        fftholo_fft .= fftholo_fft .* transfer_dz_fft_order
+        _ifft_and_abs!(view(vol, :, :, i), fftholo_fft, return_type, ifft_plan, ifft_output)
     end
 
     xyprojection = CuArray{Float32}(undef, size(wavefront.data)...)
@@ -392,22 +395,22 @@ function cu_get_reconst_vol_and_xyprojection_padded(wavefront::CuWavefront{Compl
     vol = CuArray{return_type}(undef, datlen, datlen, slices)
     padded_wavefront = cu_2d_pad(wavefront.data)
     fftholo_fft = similar(padded_wavefront)
-    ifft_workspace = similar(padded_wavefront)
     ifft_output = similar(padded_wavefront)
+    transfer_front_fft_order = _transfer_fft_order(transfer_front)
+    transfer_dz_fft_order = _transfer_fft_order(transfer_dz)
     fft_plan = CUFFT.plan_fft(padded_wavefront)
     ifft_plan = CUFFT.plan_ifft(padded_wavefront)
 
     LinearAlgebra.mul!(fftholo_fft, fft_plan, padded_wavefront)
-    fftholo = CUFFT.fftshift(fftholo_fft)
-    fftholo .= fftholo .* transfer_front.data
+    fftholo_fft .= fftholo_fft .* transfer_front_fft_order
 
     tmparr = CuArray{return_type}(undef, size(padded_wavefront)...)
-    _ifft_and_abs!(tmparr, fftholo, return_type, ifft_plan, ifft_workspace, ifft_output)
+    _ifft_and_abs!(tmparr, fftholo_fft, return_type, ifft_plan, ifft_output)
     vol[:, :, 1] .= tmparr[div(datlen,2)+1:3*div(datlen,2), div(datlen,2)+1:3*div(datlen,2)]
 
     for i in 2:slices
-        fftholo .= fftholo .* transfer_dz.data
-        _ifft_and_abs!(tmparr, fftholo, return_type, ifft_plan, ifft_workspace, ifft_output)
+        fftholo_fft .= fftholo_fft .* transfer_dz_fft_order
+        _ifft_and_abs!(tmparr, fftholo_fft, return_type, ifft_plan, ifft_output)
         vol[:, :, i] .= tmparr[div(datlen,2)+1:3*div(datlen,2), div(datlen,2)+1:3*div(datlen,2)]
     end
 
@@ -439,13 +442,13 @@ Perform angular spectrum method-based propagation of the wavefront `inholo` by d
 function cu_asm_prop!(outholo::CuWavefront, inholo::CuWavefront, d_sqr::CuTransferSqrtPart,
                     zprop::Float64, datlen::Int, λ::Float64)
     tf = cu_transfer(zprop, datlen, λ, d_sqr)
+    tf_fft_order = _transfer_fft_order(tf)
     fft_arr = similar(inholo.data)
-    ifft_in = similar(inholo.data)
     fft_plan = CUFFT.plan_fft(inholo.data)
     ifft_plan = CUFFT.plan_ifft(inholo.data)
 
     LinearAlgebra.mul!(fft_arr, fft_plan, inholo.data)
-    ifft_in .= CUFFT.ifftshift(CUFFT.fftshift(fft_arr) .* tf.data)
-    LinearAlgebra.mul!(outholo.data, ifft_plan, ifft_in)
+    fft_arr .= fft_arr .* tf_fft_order
+    LinearAlgebra.mul!(outholo.data, ifft_plan, fft_arr)
     return nothing
 end
