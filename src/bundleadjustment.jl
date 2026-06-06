@@ -391,7 +391,7 @@ function get_distortion_coefficients(img1::Array{<:AbstractFloat,2}, img2::Array
 
         norm_strObservable = lift(x -> normalize_values(x), strObservable)
         arrow_colors = lift(x -> color_mapping(x), norm_strObservable)
-        arrows!(arrowax, xs, ys, vecxObservable, vecyObservable, arrowsize=10, lengthscale=20, arrowcolor=arrow_colors, linecolor=arrow_colors)
+        arrows2d!(arrowax, xs, ys, vecxObservable, vecyObservable, tiplength=10, tipwidth=10, lengthscale=20, tipcolor=arrow_colors, shaftcolor=arrow_colors)
         firstcolor = Colorbar(f[1, 4], limits=(0, maximum(vec(sqrt.(vecArray[:, :, 1] .^ 2 .+ vecArray[:, :, 2] .^ 2)))), colormap=:viridis)
         Makie.save("./"*save_dir*"/before_BA." * save_extension, f)
         img3 = quadratic_distortion_correction(img2, coefa)

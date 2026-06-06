@@ -1,7 +1,7 @@
 name = "ParticleHolography"
 uuid = "b8f7f481-73e0-42c6-b6bd-c66d3b4942cc"
 authors = ["Dai Nakai <dnakaikit@gmail.com> and contributors"]
-version = "0.2.3"
+version = "0.2.4"
 
 [deps]
 CUDA = "052768ef-5323-5732-b1bb-66c8b64840ba"
@@ -25,25 +25,27 @@ Random = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
 Statistics = "10745b16-79ce-11e8-11f9-7d13ad32a3b2"
 StatsBase = "2913bbd2-ae8a-5f71-8c99-4fb6c76f3a91"
 UUIDs = "cf7118a7-6976-5b1a-9a39-7adc72f591a4"
+cuFFT = "533571aa-0936-420e-b4be-9c66f5f626ca"
 
 [compat]
-CUDA = "5"
-CairoMakie = "0.12, 0.13"
+CUDA = "6"
+CairoMakie = "0.12, 0.13, 0.14, 0.15"
 Colors = "0.12, 0.13"
 FileIO = "1"
-FixedPointNumbers = "0.8"
+FixedPointNumbers = "0.8, 0.9"
 Glob = "1"
 Graphs = "1"
 HistogramThresholding = "0.3"
 ImageFiltering = "0.7"
 Images = "0.26"
-JSON = "0.21"
-Makie = "0.21, 0.22"
-MetaGraphsNext = "0.7"
+JSON = "0.21, 1"
+Makie = "0.21, 0.22, 0.23, 0.24"
+MetaGraphsNext = "0.7, 0.8"
 Plots = "1"
 ProgressMeter = "1"
 Statistics = "1"
 StatsBase = "0.34"
+cuFFT = "6"
 julia = "1.8"
 
 [extras]
