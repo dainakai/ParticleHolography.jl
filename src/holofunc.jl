@@ -1,5 +1,5 @@
 using CUDA
-using CUDA.CUFFT
+using cuFFT
 using FixedPointNumbers
 using LinearAlgebra
 
@@ -111,8 +111,8 @@ function cu_phase_retrieval_holo(holo1::CuArray{Float32,2}, holo2::CuArray{Float
     sqrtI2 = sqrt.(holo2)
     transfer_fft_order = _transfer_fft_order(transfer)
     invtransfer_fft_order = _transfer_fft_order(invtransfer)
-    fft_plan = CUFFT.plan_fft(light1)
-    ifft_plan = CUFFT.plan_ifft(light1)
+    fft_plan = cuFFT.plan_fft(light1)
+    ifft_plan = cuFFT.plan_ifft(light1)
 
     light1 .= sqrtI1 .+ 0.0im
 
@@ -167,7 +167,7 @@ function _normedfloat_to_N0f8(val::AbstractFloat)
 end
 
 function _transfer_fft_order(transfer::CuTransfer{T}) where {T<:Complex}
-    return CUFFT.ifftshift(transfer.data)
+    return cuFFT.ifftshift(transfer.data)
 end
 
 function _ifft_from_fft_order!(out::AbstractArray{T,2}, fftholo::CuArray{T,2}, ifft_plan) where {T<:Complex}
@@ -217,8 +217,8 @@ function cu_get_reconst_vol(wavefront::CuWavefront{ComplexF32}, transfer_front::
     ifft_output = similar(wavefront.data)
     transfer_front_fft_order = _transfer_fft_order(transfer_front)
     transfer_dz_fft_order = _transfer_fft_order(transfer_dz)
-    fft_plan = CUFFT.plan_fft(wavefront.data)
-    ifft_plan = CUFFT.plan_ifft(wavefront.data)
+    fft_plan = cuFFT.plan_fft(wavefront.data)
+    ifft_plan = cuFFT.plan_ifft(wavefront.data)
 
     LinearAlgebra.mul!(fftholo_fft, fft_plan, wavefront.data)
     fftholo_fft .= fftholo_fft .* transfer_front_fft_order
@@ -254,8 +254,8 @@ function cu_get_reconst_complex_vol(wavefront::CuWavefront{ComplexF32}, transfer
     fftholo_fft = similar(wavefront.data)
     transfer_front_fft_order = _transfer_fft_order(transfer_front)
     transfer_dz_fft_order = _transfer_fft_order(transfer_dz)
-    fft_plan = CUFFT.plan_fft(wavefront.data)
-    ifft_plan = CUFFT.plan_ifft(wavefront.data)
+    fft_plan = cuFFT.plan_fft(wavefront.data)
+    ifft_plan = cuFFT.plan_ifft(wavefront.data)
 
     LinearAlgebra.mul!(fftholo_fft, fft_plan, wavefront.data)
     fftholo_fft .= fftholo_fft .* transfer_front_fft_order
@@ -293,8 +293,8 @@ function cu_get_reconst_xyprojection(wavefront::CuWavefront{ComplexF32}, transfe
     ifft_output = similar(wavefront.data)
     transfer_front_fft_order = _transfer_fft_order(transfer_front)
     transfer_dz_fft_order = _transfer_fft_order(transfer_dz)
-    fft_plan = CUFFT.plan_fft(wavefront.data)
-    ifft_plan = CUFFT.plan_ifft(wavefront.data)
+    fft_plan = cuFFT.plan_fft(wavefront.data)
+    ifft_plan = cuFFT.plan_ifft(wavefront.data)
 
     LinearAlgebra.mul!(fftholo_fft, fft_plan, wavefront.data)
     fftholo_fft .= fftholo_fft .* transfer_front_fft_order
@@ -350,8 +350,8 @@ function cu_get_reconst_vol_and_xyprojection(wavefront::CuWavefront{ComplexF32},
     ifft_output = similar(wavefront.data)
     transfer_front_fft_order = _transfer_fft_order(transfer_front)
     transfer_dz_fft_order = _transfer_fft_order(transfer_dz)
-    fft_plan = CUFFT.plan_fft(wavefront.data)
-    ifft_plan = CUFFT.plan_ifft(wavefront.data)
+    fft_plan = cuFFT.plan_fft(wavefront.data)
+    ifft_plan = cuFFT.plan_ifft(wavefront.data)
 
     LinearAlgebra.mul!(fftholo_fft, fft_plan, wavefront.data)
     fftholo_fft .= fftholo_fft .* transfer_front_fft_order
@@ -398,8 +398,8 @@ function cu_get_reconst_vol_and_xyprojection_padded(wavefront::CuWavefront{Compl
     ifft_output = similar(padded_wavefront)
     transfer_front_fft_order = _transfer_fft_order(transfer_front)
     transfer_dz_fft_order = _transfer_fft_order(transfer_dz)
-    fft_plan = CUFFT.plan_fft(padded_wavefront)
-    ifft_plan = CUFFT.plan_ifft(padded_wavefront)
+    fft_plan = cuFFT.plan_fft(padded_wavefront)
+    ifft_plan = cuFFT.plan_ifft(padded_wavefront)
 
     LinearAlgebra.mul!(fftholo_fft, fft_plan, padded_wavefront)
     fftholo_fft .= fftholo_fft .* transfer_front_fft_order
@@ -444,8 +444,8 @@ function cu_asm_prop!(outholo::CuWavefront, inholo::CuWavefront, d_sqr::CuTransf
     tf = cu_transfer(zprop, datlen, λ, d_sqr)
     tf_fft_order = _transfer_fft_order(tf)
     fft_arr = similar(inholo.data)
-    fft_plan = CUFFT.plan_fft(inholo.data)
-    ifft_plan = CUFFT.plan_ifft(inholo.data)
+    fft_plan = cuFFT.plan_fft(inholo.data)
+    ifft_plan = cuFFT.plan_ifft(inholo.data)
 
     LinearAlgebra.mul!(fft_arr, fft_plan, inholo.data)
     fft_arr .= fft_arr .* tf_fft_order

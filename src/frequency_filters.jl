@@ -1,5 +1,5 @@
 using CUDA
-using CUDA.CUFFT
+using cuFFT
 using LinearAlgebra
 
 export cu_rectangle_filter, cu_super_gaussian_filter, cu_apply_low_pass_filter, cu_apply_low_pass_filter!
@@ -90,11 +90,11 @@ Apply a low pass filter to the wavefront `holo`. The low pass filter is applied 
 function cu_apply_low_pass_filter!(holo::CuWavefront, lpf::CuLowPassFilter)
     fft_arr = similar(holo.data)
     ifft_in = similar(holo.data)
-    fft_plan = CUFFT.plan_fft(holo.data)
-    ifft_plan = CUFFT.plan_ifft(holo.data)
+    fft_plan = cuFFT.plan_fft(holo.data)
+    ifft_plan = cuFFT.plan_ifft(holo.data)
 
     LinearAlgebra.mul!(fft_arr, fft_plan, holo.data)
-    ifft_in .= CUFFT.ifftshift(lpf.data .* CUFFT.fftshift(fft_arr))
+    ifft_in .= cuFFT.ifftshift(lpf.data .* cuFFT.fftshift(fft_arr))
     LinearAlgebra.mul!(holo.data, ifft_plan, ifft_in)
     return nothing
 end
@@ -115,11 +115,11 @@ function cu_apply_low_pass_filter(holo::CuWavefront, lpf::CuLowPassFilter)
     fft_arr = similar(holo.data)
     ifft_in = similar(holo.data)
     filtered = similar(holo.data)
-    fft_plan = CUFFT.plan_fft(holo.data)
-    ifft_plan = CUFFT.plan_ifft(holo.data)
+    fft_plan = cuFFT.plan_fft(holo.data)
+    ifft_plan = cuFFT.plan_ifft(holo.data)
 
     LinearAlgebra.mul!(fft_arr, fft_plan, holo.data)
-    ifft_in .= CUFFT.ifftshift(lpf.data .* CUFFT.fftshift(fft_arr))
+    ifft_in .= cuFFT.ifftshift(lpf.data .* cuFFT.fftshift(fft_arr))
     LinearAlgebra.mul!(filtered, ifft_plan, ifft_in)
     return CuWavefront(filtered)
 end
