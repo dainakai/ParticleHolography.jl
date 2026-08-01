@@ -1,0 +1,42 @@
+name: macOS Metal
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ startsWith(github.ref, 'refs/pull/') }}
+
+permissions:
+  contents: read
+
+jobs:
+  metal:
+    name: Metal shared contract / Apple silicon
+    runs-on: macos-15
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: julia-actions/setup-julia@v3
+        with:
+          version: '1.12'
+          arch: aarch64
+      - uses: julia-actions/cache@v3
+      - name: Configure isolated Metal environment
+        shell: julia --project=test/environments/metal --color=yes {0}
+        run: |
+          using Pkg
+          Pkg.develop(path=pwd())
+          Pkg.instantiate()
+      - name: Require functional Metal.jl
+        shell: julia --project=test/environments/metal --color=yes {0}
+        run: |
+          using Metal
+          Metal.functional() || error("Metal is not functional on this macOS runner")
+          Metal.versioninfo()
+      - name: Run Metal shared contract
+        run: julia --project=test/environments/metal --startup-file=no --check-bounds=yes test/environments/metal/runtests.jl

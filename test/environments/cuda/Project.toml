@@ -1,0 +1,8 @@
+[deps]
+CUDA = "052768ef-5323-5732-b1bb-66c8b64840ba"
+ParticleHolography = "b8f7f481-73e0-42c6-b6bd-c66d3b4942cc"
+Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
+
+[compat]
+CUDA = "6"
+julia = "1.10"

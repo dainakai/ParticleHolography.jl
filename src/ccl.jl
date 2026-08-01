@@ -1,467 +1,239 @@
-using CUDA
-using UUIDs
 using Random
+using UUIDs
 
-# Tested
-export cu_connected_component_labeling, count_labels, cu_find_valid_labels, get_bounding_rectangles, gen_particle_neighborhoods, update_particle_neighborhoods!, finalize_particle_neighborhoods!
+export connected_component_labeling, find_valid_labels, count_labels
+export get_bounding_rectangles, gen_particle_neighborhoods
+export update_particle_neighborhoods!, update_particle_neighborhoods3d!
+export finalize_particle_neighborhoods!
+export cu_connected_component_labeling, cu_find_valid_labels
 
-# CUDA 8-way Connected Component Labelling
-# Please refer to: https://github.com/FolkeV/CUDA_CCL
+const _NEIGHBORS_8 = ((-1, -1), (-1, 0), (-1, 1), (0, -1),
+                      (0, 1), (1, -1), (1, 0), (1, 1))
 
-# ---------- reduction.cuh ----------
-# ---------- Find the root of a chain ----------
-@inline function find_root(labels, label)
-    # Resolve label
-    next = labels[label+1]
+"""
+    connected_component_labeling(image)
 
-    # Follow chain
-    while label != next
-        # Move to next
-        label = next
-        next = labels[label+1]
-    end
+Label non-zero pixels using 8-way connectivity. The reference implementation
+runs on the host and returns consecutive `UInt32` labels with zero reserved for
+the background. Device inputs are copied one image at a time.
+"""
+function connected_component_labeling(image::AbstractMatrix)
+    length(image) <= typemax(UInt32) || throw(ArgumentError("Image is too large for UInt32 labels."))
+    foreground = .!iszero.(to_host(image))
+    height, width = size(foreground)
+    labels = zeros(UInt32, height, width)
+    queue = Vector{Int}(undef, length(foreground))
+    component = UInt32(0)
 
-    return label
-end
-
-# ---------- Label Reduction ----------
-@inline function reduction(g_labels, label1, label2)
-    # Get next labels
-    next1 = (label1 != label2) ? g_labels[label1+1] : 1
-    next2 = (label1 != label2) ? g_labels[label2+1] : 1
-
-    # Find label1
-    while (label1 != label2) && (label1 != next1)
-        # Adopt label
-        label1 = next1
-
-        # Fetch next label
-        next1 = g_labels[label1+1]
-    end
-
-    # Find label2
-    while (label1 != label2) && (label2 != next2)
-        # Adopt label
-        label2 = next2
-
-        # Fetch next label
-        next2 = g_labels[label2+1]
-    end
-
-    label3 = 0
-    # While labels are different
-    while label1 != label2
-        # label2 should be smallest
-        if label1 < label2
-            # Swap labels
-            tmp = label1
-            label1 = label2
-            label2 = tmp
+    for col in 1:width, row in 1:height
+        if !foreground[row, col] || labels[row, col] != 0
+            continue
         end
-        # AtomicMin label1 to label2
-        label3 = CUDA.@atomic g_labels[label1+1] = min(g_labels[label1+1], label2)
-        label1 = (label1 == label3) ? label2 : label3
-    end
+        component == typemax(UInt32) && throw(ArgumentError("Too many connected components for UInt32 labels."))
+        component += UInt32(1)
+        head = 1
+        tail = 1
+        queue[1] = LinearIndices(foreground)[row, col]
+        labels[row, col] = component
 
-    return label1
-end
-
-# ---------- ccl.cu ----------
-function init_labels(g_labels, g_image, numCols, numRows)
-    # Calculate index
-    ix = threadIdx().x + (blockIdx().x - 1) * blockDim().x - 1
-    iy = threadIdx().y + (blockIdx().y - 1) * blockDim().y - 1
-
-    # Check thread range
-    if (ix < numCols) && (iy < numRows)
-        pyx = g_image[iy*numCols+ix+1]
-
-        # Neighbour Connections
-        nym1x = (iy > 0) ? (pyx == g_image[(iy-1)*numCols+ix+1]) : false
-        nyxm1 = (ix > 0) ? (pyx == g_image[(iy)*numCols+ix-1+1]) : false
-        nym1xm1 = ((iy > 0) && (ix > 0)) ? (pyx == g_image[(iy-1)*numCols+ix-1+1]) : false
-        nym1xp1 = ((iy > 0) && (ix < numCols - 1)) ? (pyx == g_image[(iy-1)*numCols+ix+1+1]) : false
-
-        # Initialise Label
-        # Label will be chosen in the following order:
-        # NW > N > NE > E > current position
-        label = (nyxm1) ? iy * numCols + ix - 1 : iy * numCols + ix
-        label = (nym1xp1) ? (iy - 1) * numCols + ix + 1 : label
-        label = (nym1x) ? (iy - 1) * numCols + ix : label
-        label = (nym1xm1) ? (iy - 1) * numCols + ix - 1 : label
-
-        # Write to Global Memory
-        @inbounds g_labels[iy*numCols+ix+1] = label
-    end
-
-    return nothing
-end
-
-function resolve_labels(g_labels, numCols, numRows)
-    # Calculate index
-    ix = threadIdx().x + (blockIdx().x - 1) * blockDim().x - 1
-    iy = threadIdx().y + (blockIdx().y - 1) * blockDim().y - 1
-    id = ix + iy * numCols
-
-    # Check thread range
-    if id < numCols * numRows
-        # Resolve label
-        g_labels[id+1] = find_root(g_labels, g_labels[id+1])
-    end
-
-    return nothing
-end
-
-function label_reduction(g_labels, g_image, numCols, numRows)
-    # Calculate index
-    ix = threadIdx().x + (blockIdx().x - 1) * blockDim().x - 1
-    iy = threadIdx().y + (blockIdx().y - 1) * blockDim().y - 1
-
-    # Check thread range
-    if (ix < numCols) && (iy < numRows)
-        # Compare image values
-        pyx = g_image[iy*numCols+ix+1]
-        nym1x = (iy > 0) ? (pyx == g_image[(iy-1)*numCols+ix+1]) : false
-
-        if !nym1x
-            # Neighbouring values
-            nym1xm1 = ((iy > 0) && (ix > 0)) ? (pyx == g_image[(iy-1)*numCols+ix-1+1]) : false
-            nyxm1 = (ix > 0) ? (pyx == g_image[(iy)*numCols+ix-1+1]) : false
-            nym1xp1 = ((iy > 0) && (ix < numCols - 1)) ? (pyx == g_image[(iy-1)*numCols+ix+1+1]) : false
-
-            if nym1xp1
-                # Check criticals
-                # There are three cases that need a reduction
-                if (nym1xm1 && nyxm1) || (nym1xm1 && !nyxm1)
-                    # Get labels
-                    label1 = g_labels[(iy)*numCols+ix+1]
-                    label2 = g_labels[(iy-1)*numCols+ix+1+1]
-
-                    # Reduction
-                    reduction(g_labels, label1, label2)
-                end
-
-                if !nym1xm1 && nyxm1
-                    # Get labels
-                    label1 = g_labels[(iy)*numCols+ix+1]
-                    label2 = g_labels[(iy)*numCols+ix-1+1]
-
-                    # Reduction
-                    reduction(g_labels, label1, label2)
+        while head <= tail
+            linear = queue[head]
+            head += 1
+            current = CartesianIndices(foreground)[linear]
+            r, c = Tuple(current)
+            for (dr, dc) in _NEIGHBORS_8
+                nr = r + dr
+                nc = c + dc
+                if 1 <= nr <= height && 1 <= nc <= width &&
+                   foreground[nr, nc] && labels[nr, nc] == 0
+                    labels[nr, nc] = component
+                    tail += 1
+                    queue[tail] = LinearIndices(foreground)[nr, nc]
                 end
             end
         end
     end
-
-    return nothing
+    return labels
 end
 
-function resolve_background(g_labels, g_image, width, height)
-    # Calculate index
-    ix = threadIdx().x + (blockIdx().x - 1) * blockDim().x
-    iy = threadIdx().y + (blockIdx().y - 1) * blockDim().y
-
-    # Check thread range
-    # if id <= width * height
-    if (ix <= width) && (iy <= height)
-        # Resolve label
-        g_labels[iy, ix] = (g_image[iy, ix] > 0) ? g_labels[iy, ix] + 1 : 0
-    end
-
-    return nothing
+function connected_component_labeling(b::AbstractBackend, image::AbstractMatrix)
+    return to_backend(b, connected_component_labeling(image))
 end
 
-"""
-    cu_connected_component_labeling(input_img)
+"""Count non-background connected-component labels."""
+count_labels(labels::AbstractMatrix{<:Integer}) = length(find_valid_labels(labels))
 
-8-way connected component labeling on binary image based on the article by Playne and Hawick https://ieeexplore.ieee.org/document/8274991 and the implementation by FolkeV https://github.com/FolkeV/CUDA_CCL. It works using the CUDA.jl package and NVIDIA GPUs.
-
-# Arguments
-- `input_img::CuArray{Float32, 2}`: Input binary image. 
-
-# Returns
-- `output_img::CuArray{UInt32, 2}`: Output labeled image.
-
-"""
-function cu_connected_component_labeling(input_img)
-    @assert length(input_img) <= 2^32 - 1 "Image is too large. Maximum length is 2^32-1."
-    output_img = CUDA.zeros(UInt32, size(input_img))
-
-    height, width = size(input_img)
-
-    block = (4, 32)
-    grid = cld.((width, height), block)
-
-    # Initialize labels
-    @cuda threads = block blocks = grid init_labels(output_img, input_img, width, height)
-
-    # Analysis
-    @cuda threads = block blocks = grid resolve_labels(output_img, width, height)
-
-    # Label reduction
-    @cuda threads = block blocks = grid label_reduction(output_img, input_img, width, height)
-
-    # Analysis
-    @cuda threads = block blocks = grid resolve_labels(output_img, width, height)
-
-    # Force background to have level 0
-    @cuda threads = block blocks = grid resolve_background(output_img, input_img, width, height)
-
-    return output_img
+"""Return sorted, non-zero connected-component labels."""
+function find_valid_labels(labels::AbstractMatrix{<:Integer})
+    return sort!(collect(Int, filter(!iszero, unique(vec(to_host(labels))))))
 end
 
-function count_labels(labels)
-    components = 0
-    for i in 0:length(labels)-1
-        if labels[i+1] == i + 1
-            components += 1
-        end
-    end
-    return components
-end
-
-# Post processing
-function find_indices(labels, indices, length)
-    id = threadIdx().x + (blockIdx().x - 1) * blockDim().x
-    if id <= length
-        if labels[id] == id
-            indices[id] = id
-        end
-    end
-    return nothing
-end
-
-function cu_find_valid_labels(labels::CuArray{UInt32,2})
-    d_indices = CUDA.zeros(UInt32, length(labels))
-    @cuda threads = 1024 blocks = cld(length(labels), 1024) find_indices(labels, d_indices, length(labels))
-    return Array(findall(!iszero, d_indices))
-end
-
-function get_bounding_rectangles(labels::Array{UInt32,2}, valid_labels::Vector{Int64})
-    height, width = size(labels)
-    label_to_index = Dict(l => i for (i, l) in enumerate(valid_labels))
-
-    # Initialize arrays to store min and max coordinates for each label
+function get_bounding_rectangles(labels::AbstractMatrix{<:Integer},
+                                 valid_labels::AbstractVector{<:Integer}=find_valid_labels(labels))
+    host = to_host(labels)
+    height, width = size(host)
+    label_to_index = Dict(Int(label) => i for (i, label) in enumerate(valid_labels))
     x_min = fill(typemax(Int), length(valid_labels))
     y_min = fill(typemax(Int), length(valid_labels))
     x_max = fill(typemin(Int), length(valid_labels))
     y_max = fill(typemin(Int), length(valid_labels))
 
-    # Iterate through the labels array once
-    for j in 1:width, i in 1:height
-        label = labels[i, j]
-        if haskey(label_to_index, label)
-            idx = label_to_index[label]
-            x_min[idx] = min(x_min[idx], j)
-            y_min[idx] = min(y_min[idx], i)
-            x_max[idx] = max(x_max[idx], j)
-            y_max[idx] = max(y_max[idx], i)
-        end
+    for col in 1:width, row in 1:height
+        index = get(label_to_index, Int(host[row, col]), 0)
+        index == 0 && continue
+        x_min[index] = min(x_min[index], col)
+        y_min[index] = min(y_min[index], row)
+        x_max[index] = max(x_max[index], col)
+        y_max[index] = max(y_max[index], row)
     end
-
-    # Construct the bounding rectangles
-    return [(x_min[i], y_min[i], x_max[i], y_max[i]) for i in 1:length(valid_labels)]
+    return [(x_min[i], y_min[i], x_max[i], y_max[i]) for i in eachindex(valid_labels)]
 end
 
-function gen_particle_neighborhoods(bounding_rectangles, slicenum)
-    rng = MersenneTwister(1234)
-    formatted_output = Dict{UUID,Vector{Int}}()
-
-    for item in bounding_rectangles
-        x_min, y_min, x_max, y_max = item
-        uuid = uuid1(rng)
-        formatted_output[uuid] = [x_min, y_min, slicenum, x_max, y_max, slicenum]
+function _new_uuid(existing, rng::AbstractRNG)
+    while true
+        id = uuid4(rng)
+        haskey(existing, id) || return id
     end
+end
 
-    return formatted_output
+function gen_particle_neighborhoods(bounding_rectangles, slicenum::Integer;
+                                    rng::AbstractRNG=Random.default_rng())
+    neighborhoods = Dict{UUID,Vector{Int}}()
+    for (x_min, y_min, x_max, y_max) in bounding_rectangles
+        id = _new_uuid(neighborhoods, rng)
+        neighborhoods[id] = [x_min, y_min, Int(slicenum), x_max, y_max, Int(slicenum)]
+    end
+    return neighborhoods
 end
 
 function judge_overlap2d(rect1, rect2)
     x_min1, y_min1, x_max1, y_max1 = rect1
     x_min2, y_min2, x_max2, y_max2 = rect2
-
-    if x_min1 < x_max2 && x_max1 > x_min2 && y_min1 < y_max2 && y_max1 > y_min2
-        return true
-    else
-        return false
-    end
+    return x_min1 <= x_max2 && x_max1 >= x_min2 &&
+           y_min1 <= y_max2 && y_max1 >= y_min2
 end
 
 function judge_overlap3d(rect1, rect2)
     x_min1, y_min1, z_min1, x_max1, y_max1, z_max1 = rect1
     x_min2, y_min2, z_min2, x_max2, y_max2, z_max2 = rect2
-
-    if x_min1 < x_max2 && x_max1 > x_min2 && y_min1 < y_max2 && y_max1 > y_min2 && z_min1 < z_max2 && z_max1 > z_min2
-        return true
-    else
-        return false
-    end
+    return x_min1 <= x_max2 && x_max1 >= x_min2 &&
+           y_min1 <= y_max2 && y_max1 >= y_min2 &&
+           z_min1 <= z_max2 && z_max1 >= z_min2
 end
 
 function new_rect(rect1, rect2)
-    x_min1, y_min1, x_max1, y_max1 = rect1
-    x_min2, y_min2, x_max2, y_max2 = rect2
-
-    x_min = min(x_min1, x_min2)
-    y_min = min(y_min1, y_min2)
-    x_max = max(x_max1, x_max2)
-    y_max = max(y_max1, y_max2)
-
-    return [x_min, y_min, x_max, y_max]
+    return [min(rect1[1], rect2[1]), min(rect1[2], rect2[2]),
+            max(rect1[3], rect2[3]), max(rect1[4], rect2[4])]
 end
 
-"""
-    update_particle_neighborhoods!(particle_neighborhoods, bounding_rectangles, slicenum)
-
-Updates the particle neighborhoods with new bounding rectangles from a new slice. If a bounding rectangle overlaps with an existing particle neighborhood in the x-y plane, the neighborhood is updated to include the new rectangle and the z-range is adjusted accordingly. If there is no overlap, a new particle neighborhood is created. CAUTION: This function does NOT support multiple particles along the z-axis, and it is recommended to use `update_particle_neighborhoods3d!` instead. If there are multiple particles along the z-axis, they may be merged into one particle neighborhood.
-
-# Arguments
-- `particle_neighborhoods`: The current particle neighborhoods.
-- `bounding_rectangles`: The new bounding rectangles to be added.
-- `slicenum`: The slice number of the new bounding rectangles.
-# Returns
-- `nothing`
-"""
-function update_particle_neighborhoods!(particle_neighborhoods, bounding_rectangles, slicenum)
-    rng = MersenneTwister(1234)
-
-    for br in bounding_rectangles
-        overlapflag = false
-        for item in particle_neighborhoods
-            if judge_overlap2d(br, (item[2][1], item[2][2], item[2][4], item[2][5]))
-                newbr = new_rect(br, (item[2][1], item[2][2], item[2][4], item[2][5]))
-                item[2][1] = newbr[1]
-                item[2][2] = newbr[2]
-                item[2][4] = newbr[3]
-                item[2][5] = newbr[4]
-
-                if slicenum < item[2][3]
-                    item[2][3] = slicenum
-                elseif slicenum > item[2][6]
-                    item[2][6] = slicenum
-                end
-
-                overlapflag = true
-            end
-        end
-        if !overlapflag
-            uuid = uuid1(rng)
-            particle_neighborhoods[uuid] = [br[1], br[2], slicenum, br[3], br[4], slicenum]
-        end
+function _merge_rectangle!(neighborhoods::Dict{UUID,Vector{Int}}, rectangle,
+                           slicenum::Int, candidates;
+                           rng::AbstractRNG=Random.default_rng())
+    overlaps = UUID[]
+    for id in candidates
+        box = neighborhoods[id]
+        judge_overlap2d(rectangle, (box[1], box[2], box[4], box[5])) && push!(overlaps, id)
     end
 
-    for item in particle_neighborhoods
-        if abs(item[2][1] - item[2][4]) == 1 && abs(item[2][2] - item[2][5]) == 1 && abs(item[2][3] - item[2][6]) == 1
-            delete!(particle_neighborhoods, item[1])
-        end
+    if isempty(overlaps)
+        id = _new_uuid(neighborhoods, rng)
+        neighborhoods[id] = [rectangle[1], rectangle[2], slicenum,
+                             rectangle[3], rectangle[4], slicenum]
+        return id
     end
 
-    return nothing
+    target = first(overlaps)
+    merged = neighborhoods[target]
+    merged[1] = min(merged[1], rectangle[1])
+    merged[2] = min(merged[2], rectangle[2])
+    merged[3] = min(merged[3], slicenum)
+    merged[4] = max(merged[4], rectangle[3])
+    merged[5] = max(merged[5], rectangle[4])
+    merged[6] = max(merged[6], slicenum)
+
+    for id in Iterators.drop(overlaps, 1)
+        other = neighborhoods[id]
+        merged[1] = min(merged[1], other[1])
+        merged[2] = min(merged[2], other[2])
+        merged[3] = min(merged[3], other[3])
+        merged[4] = max(merged[4], other[4])
+        merged[5] = max(merged[5], other[5])
+        merged[6] = max(merged[6], other[6])
+        delete!(neighborhoods, id)
+    end
+    return target
 end
 
-
-"""
-    update_particle_neighborhoods3d!(particle_neighborhoods, bounding_rectangles, slicenum)
-Updates the particle neighborhoods with new bounding rectangles from a new slice. If a bounding rectangle overlaps with an existing particle neighborhood in the x-y plane, the neighborhood is updated to include the new rectangle and the z-range is adjusted accordingly. If there is no overlap, a new particle neighborhood is created. This function supports multiple particles along the z-axis.
-
-# Arguments
-- `particle_neighborhoods`: The current particle neighborhoods.
-- `bounding_rectangles`: The new bounding rectangles to be added.
-- `slicenum`: The slice number of the new bounding rectangles.
-# Returns
-- `nothing`
-"""
-function update_particle_neighborhoods3d!(particle_neighborhoods, bounding_rectangles, slicenum)
-    rng = MersenneTwister(1234)
-
-    subpns = filter(((k,v), )-> v[end]==slicenum-1, particle_neighborhoods)
-
-    for br in bounding_rectangles
-        overlapflag = false
-        for item in subpns
-            if judge_overlap2d(br, (item[2][1], item[2][2], item[2][4], item[2][5]))
-                newbr = new_rect(br, (item[2][1], item[2][2], item[2][4], item[2][5]))
-                item[2][1] = newbr[1]
-                item[2][2] = newbr[2]
-                item[2][4] = newbr[3]
-                item[2][5] = newbr[4]
-                item[2][6] = slicenum
-
-                overlapflag = true
-            end
-        end
-        if !overlapflag
-            uuid = uuid1(rng)
-            particle_neighborhoods[uuid] = [br[1], br[2], slicenum, br[3], br[4], slicenum]
-        end
+"""Merge a slice's rectangles into all prior XY-overlapping neighborhoods."""
+function update_particle_neighborhoods!(neighborhoods::Dict{UUID,Vector{Int}},
+                                        bounding_rectangles, slicenum::Integer;
+                                        rng::AbstractRNG=Random.default_rng())
+    for rectangle in bounding_rectangles
+        _merge_rectangle!(neighborhoods, rectangle, Int(slicenum), collect(keys(neighborhoods)); rng)
     end
-
-    for item in particle_neighborhoods
-        if abs(item[2][1] - item[2][4]) == 1 && abs(item[2][2] - item[2][5]) == 1 && abs(item[2][3] - item[2][6]) == 1
-            delete!(particle_neighborhoods, item[1])
-        end
-    end
-
-    return nothing
+    return neighborhoods
 end
 
-"""
-    finalize_particle_neighborhoods!(particle_neighborhoods)
-
-Finalizes the particle neighborhoods by removing duplicates and particles that are too small or too elongated in the x-y plane. Detailed criteria are as follows:
-
-* Duplicate bounding boxes
-* Bounding boxes with a length-to-width (x-y) ratio greater than 3 or less than 1/3
-* Bounding boxes with an area less than ``\\sqrt{10}`` pixels
-* Bounding boxes with a depth of 1
-
-# Arguments
-- `particle_neighborhoods`: The particle neighborhoods to be finalized.
-
-# Returns
-- `nothing`
-"""
-function finalize_particle_neighborhoods!(particle_neighborhoods)
-    ParticleHolography.delete_duplicates!(particle_neighborhoods)
-    for item in particle_neighborhoods
-        if abs(item[2][3] - item[2][6]) == 1
-            delete!(particle_neighborhoods, item[1])
-        end
-        if abs(item[2][1] - item[2][4]) / abs(item[2][2] - item[2][5]) > 3 || abs(item[2][1] - item[2][4]) / abs(item[2][2] - item[2][5]) < 1 / 3
-            delete!(particle_neighborhoods, item[1])
-        end
-        if abs(item[2][1] - item[2][4]) * abs(item[2][2] - item[2][5]) < 10
-            delete!(particle_neighborhoods, item[1])
-        end
+"""Merge rectangles only with neighborhoods present in the immediately prior slice."""
+function update_particle_neighborhoods3d!(neighborhoods::Dict{UUID,Vector{Int}},
+                                          bounding_rectangles, slicenum::Integer;
+                                          rng::AbstractRNG=Random.default_rng())
+    previous = [id for (id, box) in neighborhoods if box[6] == slicenum - 1]
+    for rectangle in bounding_rectangles
+        _merge_rectangle!(neighborhoods, rectangle, Int(slicenum), previous; rng)
     end
-
-    return nothing
+    return neighborhoods
 end
 
-function delete_duplicates!(particle_neighborhoods)
-    changed = false
-    for item in particle_neighborhoods
-        for item2 in particle_neighborhoods
-            if item != item2
-                if judge_overlap3d((item[2][1], item[2][2], item[2][3], item[2][4], item[2][5], item[2][6]), (item2[2][1], item2[2][2], item2[2][3], item2[2][4], item2[2][5], item2[2][6]))
-                    newbr = new_rect((item[2][1], item[2][2], item[2][4], item[2][5]), (item2[2][1], item2[2][2], item2[2][4], item2[2][5]))
-                    item[2][1] = newbr[1]
-                    item[2][2] = newbr[2]
-                    item[2][4] = newbr[3]
-                    item[2][5] = newbr[4]
-                    item[2][3] = min(item[2][3], item2[2][3])
-                    item[2][6] = max(item[2][6], item2[2][6])
-                    delete!(particle_neighborhoods, item2[1])
-                    changed = true
-                    break
-                end
+function delete_duplicates!(neighborhoods::Dict{UUID,Vector{Int}})
+    changed = true
+    while changed
+        changed = false
+        ids = collect(keys(neighborhoods))
+        for i in 1:length(ids), j in i + 1:length(ids)
+            haskey(neighborhoods, ids[i]) && haskey(neighborhoods, ids[j]) || continue
+            firstbox = neighborhoods[ids[i]]
+            secondbox = neighborhoods[ids[j]]
+            if judge_overlap3d(firstbox, secondbox)
+                firstbox[1] = min(firstbox[1], secondbox[1])
+                firstbox[2] = min(firstbox[2], secondbox[2])
+                firstbox[3] = min(firstbox[3], secondbox[3])
+                firstbox[4] = max(firstbox[4], secondbox[4])
+                firstbox[5] = max(firstbox[5], secondbox[5])
+                firstbox[6] = max(firstbox[6], secondbox[6])
+                delete!(neighborhoods, ids[j])
+                changed = true
+                break
             end
         end
     end
+    return neighborhoods
+end
 
-    if changed
-        ParticleHolography.delete_duplicates!(particle_neighborhoods)
+"""Remove duplicate, one-slice, highly elongated, and area-smaller-than-10 boxes."""
+function finalize_particle_neighborhoods!(neighborhoods::Dict{UUID,Vector{Int}})
+    delete_duplicates!(neighborhoods)
+    delete_ids = UUID[]
+    for (id, box) in neighborhoods
+        width = box[4] - box[1] + 1
+        height = box[5] - box[2] + 1
+        depth = box[6] - box[3] + 1
+        aspect = width / height
+        if depth <= 1 || aspect > 3 || aspect < 1 / 3 || width * height < 10
+            push!(delete_ids, id)
+        end
     end
+    foreach(id -> delete!(neighborhoods, id), delete_ids)
+    return neighborhoods
+end
 
-    return nothing
+function cu_connected_component_labeling(image::AbstractMatrix)
+    _legacy(:cu_connected_component_labeling, :connected_component_labeling)
+    b = backend(:cuda)
+    return connected_component_labeling(b, image)
+end
+
+function cu_find_valid_labels(labels::AbstractMatrix{<:Integer})
+    _legacy(:cu_find_valid_labels, :find_valid_labels)
+    return find_valid_labels(labels)
 end

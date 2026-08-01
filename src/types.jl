@@ -1,62 +1,48 @@
-using CUDA
-
+export TransferSqrtPart, Transfer, Wavefront, LowPassFilter
 export CuTransferSqrtPart, CuTransfer, CuWavefront, CuLowPassFilter
 
-"""
-    CuTransferSqrtPart{T<: AbstractFloat}
-
-A struct that holds the data for the square root part of the transfer function.
-
-# Fields
-- `data::CuArray{T,2}`: The data for the square root part of the transfer function.
-"""
-struct CuTransferSqrtPart{T<:AbstractFloat}
-    data::CuArray{T,2}
+"""FFT-native square-root term used to construct angular-spectrum transfers."""
+struct TransferSqrtPart{T<:AbstractFloat,A<:AbstractMatrix{T}} <: AbstractMatrix{T}
+    data::A
 end
 
-"""
-    CuTransfer{T<: Complex}
-
-A struct that holds the data for the transfer function.
-
-# Fields
-- `data::CuArray{T,2}`: The data for the transfer function.
-"""
-struct CuTransfer{T<:Complex}
-    data::CuArray{T,2}
+"""Angular-spectrum transfer function stored in FFT-native frequency order."""
+struct Transfer{T<:Complex,A<:AbstractMatrix{T}} <: AbstractMatrix{T}
+    data::A
 end
 
-"""
-    CuWavefront{T<: Complex}
-
-A struct that holds the data for the wavefront.
-
-# Fields
-- `data::CuArray{T,2}`: The data for the wavefront.
-"""
-struct CuWavefront{T<:Complex}
-    data::CuArray{T,2}
+"""Complex optical wavefront on any supported execution backend."""
+struct Wavefront{T<:Complex,A<:AbstractMatrix{T}} <: AbstractMatrix{T}
+    data::A
 end
 
-
-"""
-    CuLowPassFilter{T<: AbstractFloat}
-
-A struct that holds the data for the low pass filter. This can be multiplied with the Fourier transform of wavefront to get the low pass filtered wavefront after propagation.
-
-# Fields
-- `data::CuArray{T,2}`: The data for the low pass filter.
-"""
-struct CuLowPassFilter{T<:AbstractFloat}
-    data::CuArray{T,2}
+"""Frequency-domain low-pass filter stored in FFT-native order."""
+struct LowPassFilter{T<:AbstractFloat,A<:AbstractMatrix{T}} <: AbstractMatrix{T}
+    data::A
 end
 
-for T in (CuTransferSqrtPart, CuTransfer, CuWavefront, CuLowPassFilter)
+for Wrapper in (TransferSqrtPart, Transfer, Wavefront, LowPassFilter)
     @eval begin
-        Base.size(x::$T) = size(x.data)
-        Base.axes(x::$T) = axes(x.data)
-        Base.eltype(x::$T) = eltype(x.data)
-        Base.ndims(x::$T) = ndims(x.data)
-        Base.IndexStyle(::Type{$T}) = IndexStyle(CuArray)
+        Base.size(x::$Wrapper) = size(x.data)
+        Base.axes(x::$Wrapper) = axes(x.data)
+        Base.eltype(x::$Wrapper) = eltype(x.data)
+        Base.ndims(x::$Wrapper) = ndims(x.data)
+        Base.length(x::$Wrapper) = length(x.data)
+        Base.getindex(x::$Wrapper, I...) = getindex(x.data, I...)
+        Base.setindex!(x::$Wrapper, value, I...) = setindex!(x.data, value, I...)
+        Base.parent(x::$Wrapper) = x.data
+        Base.copy(x::$Wrapper) = $Wrapper(copy(x.data))
     end
 end
+
+backendof(x::Union{TransferSqrtPart,Transfer,Wavefront,LowPassFilter}) = backendof(x.data)
+to_host(x::TransferSqrtPart) = TransferSqrtPart(to_host(x.data))
+to_host(x::Transfer) = Transfer(to_host(x.data))
+to_host(x::Wavefront) = Wavefront(to_host(x.data))
+to_host(x::LowPassFilter) = LowPassFilter(to_host(x.data))
+
+# v0.2 compatibility aliases. New code should use the backend-neutral names.
+const CuTransferSqrtPart = TransferSqrtPart
+const CuTransfer = Transfer
+const CuWavefront = Wavefront
+const CuLowPassFilter = LowPassFilter

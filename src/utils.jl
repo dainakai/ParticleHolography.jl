@@ -1,13 +1,14 @@
-using Images
-using StatsBase
+using ImageCore: channelview
+using ImageIO
 using ProgressMeter
 using Colors
 using FixedPointNumbers
 using JSON
 using FileIO
+using UUIDs
 
 export load_gray2float, find_external_contours, draw_contours!, make_background, pad_with_mean, dictsave, dictload
-export load_grayimg, cu_make_background_mode
+export load_grayimg, make_background_mode, cu_make_background_mode
 
 """
     load_gray2float(path)
@@ -20,8 +21,8 @@ Load a grayscale image from a file and return it as a Array{Float32, 2} array.
 # Returns
 - `Array{Float32, 2}`: The image as a Float32 array.
 """
-function load_gray2float(path::String)
-    out = Float32.(channelview(Gray.(load(path))))
+function load_gray2float(path::AbstractString)
+    return Float32.(channelview(Gray.(load(path))))
 end
 
 """
@@ -35,8 +36,8 @@ Load a grayscale image from a file and return it as a Array{Gray{N0f8}, 2} array
 # Returns
 - `Array{Gray{N0f8}, 2}`: The image as a Gray{N0f8} array.
 """
-function load_grayimg(path::String)
-    out = channelview(Gray.(load(path)))
+function load_grayimg(path::AbstractString)
+    return channelview(Gray.(load(path)))
 end
 
 
@@ -72,7 +73,9 @@ end
 # finds direction between two given pixels
 function _from_to(from, to, dir_delta)
     delta = to - from
-    return findall(x -> x == delta, dir_delta)[1]
+    direction = findfirst(==(delta), dir_delta)
+    isnothing(direction) && throw(ArgumentError("Pixels are not Moore neighbours: $from and $to."))
+    return direction
 end
 
 function _detect_move(image, p0, p2, nbd, border, done, dir_delta)
@@ -136,53 +139,36 @@ Finds non-hole contours in binary images. This function is excuted on the CPU. E
 """
 function find_external_contours(image)
     nbd = 1
-    lnbd = 1
     image = Float64.(image)
-    contour_list = Vector{typeof(CartesianIndex[])}()
-    done = [false, false, false, false, false, false, false, false]
+    contour_list = Vector{Vector{CartesianIndex{2}}}()
+    done = falses(8)
 
     # Clockwise Moore neighborhood.
-    dir_delta = [CartesianIndex(-1, 0), CartesianIndex(-1, 1), CartesianIndex(0, 1), CartesianIndex(1, 1), CartesianIndex(1, 0), CartesianIndex(1, -1), CartesianIndex(0, -1), CartesianIndex(-1, -1)]
+    dir_delta = (
+        CartesianIndex(-1, 0), CartesianIndex(-1, 1),
+        CartesianIndex(0, 1), CartesianIndex(1, 1),
+        CartesianIndex(1, 0), CartesianIndex(1, -1),
+        CartesianIndex(0, -1), CartesianIndex(-1, -1),
+    )
 
     height, width = size(image)
 
     for i = 1:height
-        lnbd = 1
         for j = 1:width
-            fji = image[i, j]
-            is_outer = (image[i, j] == 1 && (j == 1 || image[i, j-1] == 0)) ## 1 (a)
-            #is_hole = (image[i, j] >= 1 && (j == width || image[i, j+1] == 0))
-
-            if is_outer #|| is_hole
-                # 2
-                border = CartesianIndex[]
-
-                from = CartesianIndex(i, j)
-
-                if is_outer
-                    nbd += 1
-                    from -= CartesianIndex(0, 1)
-
-                else
-                    nbd += 1
-                    if fji > 1
-                        lnbd = fji
-                    end
-                    from += CartesianIndex(0, 1)
-                end
-
+            is_outer = image[i, j] == 1 && (j == 1 || image[i, j-1] == 0)
+            if is_outer
+                border = CartesianIndex{2}[]
+                from = CartesianIndex(i, j) - CartesianIndex(0, 1)
+                nbd += 1
                 p0 = CartesianIndex(i, j)
-                _detect_move(image, p0, from, nbd, border, done, dir_delta) ## 3
-                if isempty(border) ##TODO
+                _detect_move(image, p0, from, nbd, border, done, dir_delta)
+                if isempty(border)
+                    # An isolated foreground pixel has no valid Moore move.
                     push!(border, p0)
                     image[p0] = -nbd
                 end
                 push!(contour_list, border)
             end
-            if fji != 0 && fji != 1
-                lnbd = abs(fji)
-            end
-
         end
     end
 
@@ -214,7 +200,8 @@ Make a background image from a list of image paths. The background image is calc
 # Returns
 - `Array{Float64, 2}`: The background image.
 """
-function make_background(pathlist::Vector{String}; mode=:mode)
+function make_background(pathlist::AbstractVector{<:AbstractString}; mode=:mode)
+    isempty(pathlist) && throw(ArgumentError("pathlist cannot be empty."))
     if mode == :mean
         background = zeros(Float64, size(load_gray2float(pathlist[1])))
         @showprogress desc = "Background calculating..." for path in pathlist
@@ -224,103 +211,64 @@ function make_background(pathlist::Vector{String}; mode=:mode)
         return background
 
     elseif mode == :mode
-        votevol = zeros(Int, (256, size(load_gray2float(pathlist[1]))...))
-        datlen = size(load(pathlist[1]))[1]
-        @showprogress desc = "Background calculating..." for path in pathlist
-            img = Int.(reinterpret.(UInt8, channelview(Gray.(load(path)))))
-            for x in 1:datlen
-                for y in 1:datlen
-                    votevol[img[y, x]+1, y, x] += 1
-                end
-            end
-        end
-        background = [(value[1] - 1.0) ./ 255.0 for value in argmax(votevol, dims=1)[1, :, :]]
-        return background
+        images = [load_grayimg(path) for path in pathlist]
+        return make_background_mode(images)
     end
+    throw(ArgumentError("mode must be :mean or :mode. Got $mode."))
 end
 
-# COV_EXCL_START
-function _cu_kernel_vote!(votevol, nimg, H, W)
-    i = (blockIdx().x - 1) * blockDim().x + threadIdx().x  # row (y)
-    j = (blockIdx().y - 1) * blockDim().y + threadIdx().y  # col (x)
-
-    if i <= H && j <= W
-        @inbounds val = Int(nimg[i, j]) + 1  # 1..256
-        @inbounds votevol[val, i, j] += Int32(1)  # atomic不要
+function _as_uint8_image(image::AbstractMatrix)
+    host = to_host(image)
+    if eltype(host) === UInt8
+        return host
     end
-    return
+    return round.(UInt8, clamp.(Float32.(host) .* 255, 0, 255))
 end
 
-function _cu_kernel_argmax!(out_u8, votevol, H, W, B)
-    i = (blockIdx().x - 1) * blockDim().x + threadIdx().x
-    j = (blockIdx().y - 1) * blockDim().y + threadIdx().y
-
-    if i <= H && j <= W
-        maxv = Int32(-1)
-        arg  = Int32(1)
-        @inbounds for b in 1:B
-            v = votevol[b, i, j]
-            if v > maxv
-                maxv = v
-                arg  = Int32(b)
-            end
-        end
-        @inbounds out_u8[i, j] = UInt8(arg - 1)  # 0..255
-    end
-    return
-end
-# COV_EXCL_STOP
-
-
-""" 
-    cu_make_background_mode(grayimglist)
-
-Compute the per-pixel intensity mode from the list returned by load_grayimg() and return it as a background image. The computation uses CUDA.
-
-# Arguments
-- `grayimglist::Vector{Array{N0f8, 2}}`: A list of grayscale images as Array{N0f8, 2}.
-
-# Returns
-- `Array{Float64, 2}`: The background image.
 """
-function cu_make_background_mode(grayimglist)
-    H, W = size(grayimglist[1])
-    B = 256
+    make_background_mode(images; backend=CPUBackend())
 
-    votevol = CUDA.zeros(Int32, B, H, W)
+Compute the per-pixel 8-bit mode without allocating the former
+`256 × height × width` vote volume. GPU inputs are staged to the host once;
+this preprocessing step deliberately favours bounded memory over acceleration.
+"""
+function make_background_mode(images::AbstractVector{<:AbstractMatrix};
+                              backend::AbstractBackend=CPUBackend())
+    isempty(images) && throw(ArgumentError("images cannot be empty."))
+    shape = size(first(images))
+    all(image -> size(image) == shape, images) || throw(DimensionMismatch("All background images must have the same size."))
+    prepared = _as_uint8_image.(images)
+    mode_image = Matrix{UInt8}(undef, shape)
 
-    threads = (32, 32)
-    blocks  = (cld(H, threads[1]), cld(W, threads[2]))
-
-    nimg_gpu = CuArray{UInt8}(undef, H, W)
-
-    @showprogress for img in grayimglist
-        if eltype(img) === UInt8
-            copyto!(nimg_gpu, img)
-        else
-            nimg_u8 = round.(UInt8, clamp.(Float32.(img) .* 255, 0, 255))
-            copyto!(nimg_gpu, nimg_u8)
+    Threads.@threads for row in axes(mode_image, 1)
+        counts = zeros(Int, 256)
+        for col in axes(mode_image, 2)
+            fill!(counts, 0)
+            for image in prepared
+                @inbounds counts[Int(image[row, col]) + 1] += 1
+            end
+            @inbounds mode_image[row, col] = UInt8(argmax(counts) - 1)
         end
-        @cuda threads=threads blocks=blocks _cu_kernel_vote!(votevol, nimg_gpu, H, W)
     end
-
-    CUDA.synchronize()
-
-    mode_u8 = CuArray{UInt8}(undef, H, W)
-    @cuda threads=threads blocks=blocks _cu_kernel_argmax!(mode_u8, votevol, H, W, B)
-    CUDA.synchronize()
-
-    mode_host = Array(mode_u8)
-    background = Array{Float64}(undef, H, W)
-    @. background = mode_host / 255.0
-    return background
+    return Float64.(mode_image) ./ 255
 end
 
-function pad_with_mean(img, padsize)
-    @assert padsize > size(img, 1) && padsize > size(img, 2) "Padsize should be larger than the image size. padsize: $padsize, img size: $(size(img))"
-    meanval = mean(img)
-    output = fill(meanval, (padsize, padsize))
-    output[div(padsize, 2)-div(size(img, 1), 2)+1:div(padsize, 2)-div(size(img, 1), 2)+size(img, 1), div(padsize, 2)-div(size(img, 2), 2)+1:div(padsize, 2)-div(size(img, 2), 2)+size(img, 2)] .= img
+function cu_make_background_mode(images)
+    _legacy(:cu_make_background_mode, :make_background_mode)
+    return make_background_mode(images; backend=CPUBackend())
+end
+
+function pad_with_mean(image::AbstractMatrix, padsize::Integer)
+    padsize > max(size(image)...) || throw(ArgumentError(
+        "padsize must be larger than both image dimensions; got $padsize and $(size(image)).",
+    ))
+    output = similar(image, eltype(image), (padsize, padsize))
+    fill!(output, convert(eltype(image), mean(to_host(image))))
+    first_row = fld(padsize - size(image, 1), 2) + 1
+    first_col = fld(padsize - size(image, 2), 2) + 1
+    rows = first_row:first_row + size(image, 1) - 1
+    cols = first_col:first_col + size(image, 2) - 1
+    @views output[rows, cols] .= image
     return output
 end
 

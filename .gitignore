@@ -1,5 +1,6 @@
 /Manifest.toml
 /docs/Manifest.toml
+/test/environments/*/Manifest.toml
 /docs/build/
 /dev/
 tmp/

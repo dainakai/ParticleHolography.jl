@@ -1,237 +1,177 @@
-using CUDA
-using FixedPointNumbers
-using Statistics
-using ImageFiltering
 using HistogramThresholding
+using ImageFiltering
+using Statistics
 using UUIDs
 
-export particle_bounding_boxes, particle_coordinates, particle_coor_diams
-export particle_bounding_boxes_3d, cu_dilate
+export dilate, cu_dilate
+export particle_bounding_boxes, particle_bounding_boxes_3d
+export particle_coordinates, particle_coor_diams
+export tamura, depth_profile, equivalent_diameter
 
-# COV_EXCL_START
-function _cu_dilate_3d!(dilated, vol, datlen, slices)
-    x = (blockIdx().x - 1) * blockDim().x + threadIdx().x
-    y = (blockIdx().y - 1) * blockDim().y + threadIdx().y
-    z = (blockIdx().z - 1) * blockDim().z + threadIdx().z
+"""
+    dilate(volume)
 
-    if x>1 && x<datlen && y>1 && y<datlen && z>0 && z<=slices
-        @inbounds dilated[y,x,z] = vol[y-1,x-1,z] || vol[y-1,x,z] || vol[y-1,x+1,z] || vol[y,x-1,z] || vol[y,x,z] || vol[y,x+1,z] || vol[y+1,x-1,z] || vol[y+1,x,z] || vol[y+1,x+1,z]
+Dilate each XY slice with a 3×3 neighbourhood. The operation stays on the
+input array's backend and preserves the v0.2 convention that boundary pixels
+remain false.
+"""
+function dilate(volume::AbstractArray{Bool,3})
+    height, width, slices = size(volume)
+    output = similar(volume, Bool, size(volume))
+    fill!(output, false)
+    (height < 3 || width < 3) && return output
+    @views interior = output[2:height-1, 2:width-1, :]
+    for dr in -1:1, dc in -1:1
+        @views interior .= interior .| volume[2+dr:height-1+dr,
+                                             2+dc:width-1+dc, 1:slices]
     end
-    return nothing
-end
-# COV_EXCL_STOP
-
-"""
-    cu_dilate(vol; blocksize=32)
-
-Perform a 3D dilation on the reconstructed image stack `vol` and return the dilated stack.
-
-# Arguments
-- `vol::CuArray{Bool,3}`: The input 3D binary volume to be dilated. It can be the result of thresholding a reconstructed volume.
-- `blocksize::Int`: The block size for CUDA kernel execution. Default is 32.
-"""
-function cu_dilate(vol::CuArray{Bool,3}; blocksize=32)
-    datlen = size(vol, 1)
-    slices = size(vol, 3)
-    dilated = CUDA.fill(false, (datlen, datlen, slices))
-    threads = (blocksize, blocksize, 1)
-    blocks = cld.((datlen, datlen, slices), threads)
-    @cuda threads=threads blocks=blocks _cu_dilate_3d!(dilated, vol, datlen, slices)
-    return dilated
+    return output
 end
 
+function cu_dilate(volume::AbstractArray{Bool,3}; blocksize::Integer=32)
+    _legacy(:cu_dilate, :dilate)
+    blocksize > 0 || throw(ArgumentError("blocksize must be positive."))
+    return dilate(volume)
+end
 
-"""
-    particle_bounding_boxes(d_bin_vol)
+function _slice_bounding_rectangles(volume::AbstractArray{Bool,3}, slice::Int)
+    @views labels = connected_component_labeling(volume[:, :, slice])
+    return get_bounding_rectangles(labels)
+end
 
-Detects the particles in a binary volume and returns the bounding boxes of the particles.
-This function performs three-dimensional element connected labeling on binary volumes. However, please note that it does not perform strict adjacent connectivity in the optical axis (z) direction. Strict adjacent connectivity in the optical axis direction may result in artifacts not being connected, potentially leading to the detection of many ghost particles.
-This function assumes that two particles never overlap at exactly the same X-Y coordinates. All elements that overlap in X-Y coordinates are considered connected. Therefore, this method is not suitable for accurate position detection of particles that overlap in X-Y coordinates.
-Additionally, this processing may have some effects, such as slightly elongating the bounding box of particles in the optical axis direction. However, this has minimal impact on the accuracy of particle position detection.
-
-# Arguments
-- `d_bin_vol::CuArray{Bool, 3}`: The binary volume of reconstructed holographic volume. Binarization can be done by thresholding the reconstructed volume. `true` values represent the particles and neighboring voxels and vice versa.
-
-# Returns
-- `Dict{UUID, Vector{Int}}`: The bounding boxes of the particles.
-"""
-function particle_bounding_boxes(d_bin_vol::CuArray{Bool,3})
-    @views labeledimg = cu_connected_component_labeling(d_bin_vol[:, :, 1])
-    valid_labels = cu_find_valid_labels(labeledimg)
-    bounding_boxes = get_bounding_rectangles(Array(labeledimg), valid_labels)
-    particle_bbs = gen_particle_neighborhoods(bounding_boxes, 1)
-
-    slices = size(d_bin_vol, 3)
-    if slices > 1
-        for idx in 2:slices
-            @views labeledimg = cu_connected_component_labeling(d_bin_vol[:, :, idx])
-            valid_labels = cu_find_valid_labels(labeledimg)
-            bounding_boxes = get_bounding_rectangles(Array(labeledimg), valid_labels)
-            update_particle_neighborhoods!(particle_bbs, bounding_boxes, idx)
+function _particle_bounding_boxes(volume::AbstractArray{Bool,3}, adjacent_only::Bool;
+                                  rng::AbstractRNG=Random.default_rng())
+    size(volume, 3) > 0 || throw(ArgumentError("Binary volume must contain at least one slice."))
+    rectangles = _slice_bounding_rectangles(volume, 1)
+    neighborhoods = gen_particle_neighborhoods(rectangles, 1; rng)
+    for slice in 2:size(volume, 3)
+        rectangles = _slice_bounding_rectangles(volume, slice)
+        if adjacent_only
+            update_particle_neighborhoods3d!(neighborhoods, rectangles, slice; rng)
+        else
+            update_particle_neighborhoods!(neighborhoods, rectangles, slice; rng)
         end
     end
-
-    finalize_particle_neighborhoods!(particle_bbs)
-    return particle_bbs
+    return finalize_particle_neighborhoods!(neighborhoods)
 end
 
-function particle_bounding_boxes_3d(d_bin_vol::CuArray{Bool,3})
-    @views labeledimg = cu_connected_component_labeling(d_bin_vol[:, :, 1])
-    valid_labels = cu_find_valid_labels(labeledimg)
-    bounding_boxes = get_bounding_rectangles(Array(labeledimg), valid_labels)
-    particle_bbs = gen_particle_neighborhoods(bounding_boxes, 1)
+"""
+    particle_bounding_boxes(binary_volume)
 
-    slices = size(d_bin_vol, 3)
-    if slices > 1
-        for idx in 2:slices
-            @views labeledimg = cu_connected_component_labeling(d_bin_vol[:, :, idx])
-            valid_labels = cu_find_valid_labels(labeledimg)
-            bounding_boxes = get_bounding_rectangles(Array(labeledimg), valid_labels)
-            update_particle_neighborhoods3d!(particle_bbs, bounding_boxes, idx)
-        end
+Connect slice components whenever their inclusive XY bounding boxes overlap.
+This keeps the original non-adjacent-z behaviour used to join fragmented
+holographic particle signatures.
+"""
+particle_bounding_boxes(volume::AbstractArray{Bool,3}; rng::AbstractRNG=Random.default_rng()) =
+    _particle_bounding_boxes(volume, false; rng)
+
+"""Variant that joins a component only to a component in the preceding slice."""
+particle_bounding_boxes_3d(volume::AbstractArray{Bool,3}; rng::AbstractRNG=Random.default_rng()) =
+    _particle_bounding_boxes(volume, true; rng)
+
+"""Tamura focus coefficient (`std / mean`) with a stable all-zero case."""
+function tamura(array::AbstractMatrix{<:AbstractFloat})
+    μ = mean(array)
+    iszero(μ) && return zero(float(eltype(array)))
+    return std(array) / μ
+end
+
+depth_profile(metric::Function, volume::AbstractArray{<:Union{AbstractFloat,Complex},3}) =
+    [metric(@view volume[:, :, slice]) for slice in axes(volume, 3)]
+
+function getcenterfromslice(array::AbstractMatrix{<:AbstractFloat})
+    total = sum(array)
+    if iszero(total) || !isfinite(total)
+        return ((first(axes(array, 2)) + last(axes(array, 2))) / 2,
+                (first(axes(array, 1)) + last(axes(array, 1))) / 2)
     end
-
-    finalize_particle_neighborhoods!(particle_bbs)
-    return particle_bbs
-end
-
-"""
-    tamura(arr)
-
-Calculates the Tamura coefficient of an array. The Tamura coefficient is defined as the standard deviation divided by the mean of the array. Please refer to the use in digital holography https://doi.org/10.1364/OL.36.001945
-
-# Arguments
-- `arr::Array{Float32, 2}`: The array for which the Tamura coefficient is calculated.
-
-# Returns
-- `Float32`: The Tamura coefficient of the array.
-"""
-function tamura(arr::AbstractArray{<:AbstractFloat,2})
-    return std(arr) / mean(arr)
-end
-
-function depth_profile(f::Function, bounding_rect_3d::AbstractArray{<:Union{AbstractFloat,Complex},3})
-    return [f(bounding_rect_3d[:, :, i]) for i in axes(bounding_rect_3d, 3)]
-end
-
-function getcenterfromslice(arr::AbstractArray{<:AbstractFloat,2})
     x = 0.0
     y = 0.0
-    for i in axes(arr, 1)
-        for j in axes(arr, 2)
-            y += i * arr[i, j]
-            x += j * arr[i, j]
-        end
+    for row in axes(array, 1), col in axes(array, 2)
+        value = array[row, col]
+        y += row * value
+        x += col * value
     end
-    x = x / sum(arr)
-    y = y / sum(arr)
-    return (x, y)
+    return (x / total, y / total)
 end
 
-function _validate_particle_volume_type(T::Type, argname::String)
-    if T <: Bool
-        throw(ArgumentError("`$argname` must contain real-valued intensity voxels. Bool is not supported."))
-    elseif !(T <: Real)
-        throw(ArgumentError("`$argname` must contain real-valued intensity voxels (for example N0f8, Float32, UInt8, UInt16). Got element type $T."))
-    end
+function _validate_particle_volume_type(T::Type, name::String)
+    T <: Bool && throw(ArgumentError("`$name` must contain real-valued intensity voxels; Bool is not supported."))
+    T <: Real || throw(ArgumentError("`$name` must contain real-valued intensity voxels. Got $T."))
     return nothing
 end
 
-function _validate_particle_volume_pair(d_vol::CuArray{T,3}, d_lpf_vol) where {T}
-    _validate_particle_volume_type(T, "d_vol")
-    if isnothing(d_lpf_vol)
-        return nothing
-    end
-
-    if !(d_lpf_vol isa CuArray{<:Any,3})
-        throw(ArgumentError("`d_lpf_vol` must be `nothing` or `CuArray{<:Any,3}`. Got $(typeof(d_lpf_vol))."))
-    end
-
-    _validate_particle_volume_type(eltype(d_lpf_vol), "d_lpf_vol")
-    if size(d_lpf_vol) != size(d_vol)
-        throw(ArgumentError("`d_lpf_vol` must have the same size as `d_vol`. Got $(size(d_lpf_vol)) and $(size(d_vol))."))
-    end
-
+function _validate_particle_volume_pair(volume::AbstractArray{T,3}, filtered) where {T}
+    _validate_particle_volume_type(T, "volume")
+    isnothing(filtered) && return nothing
+    filtered isa AbstractArray{<:Any,3} || throw(ArgumentError("filtered volume must be nothing or a three-dimensional array."))
+    _validate_particle_volume_type(eltype(filtered), "filtered")
+    size(filtered) == size(volume) || throw(DimensionMismatch("Filtered and unfiltered volumes must have the same size."))
     return nothing
 end
 
-
-"""
-    particle_coordinates(particle_bbs, d_vol; depth_metrics = tamura, profile_smoothing_kernel = Kernel.gaussian(5,))
-
-Calculates the coordinates of the particles in the reconstructed volume with the bounding boxe dictionary. The depth of the particles is the maximum of the profile that is calculated using the `depth_metrics` function at each slice of the bounding box. The profile is then smoothed using the `profile_smoothing_kernel`. The x and y coordinates are calculated by finding the center of mass of the slice with the detected depth. The low pass filtered volume would be better for coordinate detection. The extracted subvolume is converted to `Float32` internally before evaluating metrics.
-
-# Arguments
-- `particle_bbs::Dict{UUID, Vector{Int}}`: The bounding boxes of the particles.
-- `d_vol::CuArray{T, 3}`: The reconstructed volume. Real-valued voxel types such as `N0f8`, `Float32`, `UInt8`, and `UInt16` are supported. `Bool` and complex inputs are rejected.
-- `depth_metrics::Function = tamura`: The function that calculates the depth profile of the particles.
-- `profile_smoothing_kernel = Kernel.gaussian((5,))`: The kernel used for smoothing the depth profile.
-
-# Returns
-- `Dict{UUID, Vector{Float32}}`: The coordinates of the particles.
-"""
-function particle_coordinates(particle_bbs::Dict{UUID,Vector{Int}}, d_vol::CuArray{T,3}; depth_metrics::Function=tamura, profile_smoothing_kernel=Kernel.gaussian((5,))) where {T}
-    _validate_particle_volume_type(T, "d_vol")
-    particle_coords = Dict{UUID,Vector{Float32}}()
-    for (key, value) in particle_bbs
-        @views subvol = Float32.(d_vol[value[2]:value[5], value[1]:value[4], value[3]:value[6]])
-        zmetric = depth_profile(depth_metrics, subvol)
-        imfilter!(zmetric, zmetric, profile_smoothing_kernel)
-        z = argmax(zmetric)
-        (x, y) = getcenterfromslice(Array(subvol[:, :, z]))
-        particle_coords[key] = [x + value[1] - 1, y + value[2] - 1, z + value[3] - 1]
-    end
-    return particle_coords
+function _validated_box(box::AbstractVector{<:Integer}, volume_size)
+    length(box) == 6 || throw(ArgumentError("Particle bounding boxes must have six entries [xmin, ymin, zmin, xmax, ymax, zmax]."))
+    xmin, ymin, zmin, xmax, ymax, zmax = box
+    1 <= xmin <= xmax <= volume_size[2] || throw(ArgumentError("Invalid x range $xmin:$xmax for width $(volume_size[2])."))
+    1 <= ymin <= ymax <= volume_size[1] || throw(ArgumentError("Invalid y range $ymin:$ymax for height $(volume_size[1])."))
+    1 <= zmin <= zmax <= volume_size[3] || throw(ArgumentError("Invalid z range $zmin:$zmax for depth $(volume_size[3])."))
+    return (xmin, ymin, zmin, xmax, ymax, zmax)
 end
 
-function equivalent_diameter(arr::AbstractArray{<:AbstractFloat,2})
-    t = find_threshold(arr, HistogramThresholding.Otsu())
-    newarr = arr .<= t
-    return 2 * sqrt(sum(newarr) / π)
+function _host_subvolume(volume::AbstractArray, box)
+    xmin, ymin, zmin, xmax, ymax, zmax = box
+    @views return Float32.(to_host(volume[ymin:ymax, xmin:xmax, zmin:zmax]))
 end
 
-"""
-    particle_coor_diams(particle_bbs, d_vol, d_lpf_vol = nothing; depth_metrics = tamura, profile_smoothing_kernel = Kernel.gaussian(5,), diameter_metrics = equivalent_diameter)
-
-Calculates the coordinates and diameters of the particles in the reconstructed volume with the bounding boxe dictionary. The depth of the particles is the maximum of the profile that is calculated using the `depth_metrics` function at each slice of the bounding box. The profile is then smoothed using the `profile_smoothing_kernel`. The x and y coordinates are calculated by finding the center of mass of the slice with the detected depth. The low pass filtered volume would be better for coordinate detection. The diameter of the particles is calculated using the `diameter_metrics` function. If the low pass filtered volume is provided, the coordinate is calculated using the low pass filtered volume. The extracted subvolumes are converted to `Float32` internally before evaluating metrics.
-
-# Arguments
-- `particle_bbs::Dict{UUID, Vector{Int}}`: The bounding boxes of the particles.
-- `d_vol::CuArray{T, 3}`: The reconstructed volume. Real-valued voxel types such as `N0f8`, `Float32`, `UInt8`, and `UInt16` are supported. `Bool` and complex inputs are rejected.
-
-# Optional arguments
-- `d_lpf_vol = nothing`: The low pass filtered volume. When provided, it must be a 3D `CuArray` with a real-valued element type and the same size as `d_vol`.
-
-# Optional keyword arguments
-- `depth_metrics::Function = tamura`: The function that calculates the depth profile of the particles.
-- `profile_smoothing_kernel = Kernel.gaussian((5,))`: The kernel used for smoothing the depth profile.
-- `diameter_metrics::Function = equivalent_diameter`: The function that calculates the diameter of the particles.
-
-# Returns
-- `Dict{UUID, Vector{Float32}}`: The coordinates and diameters of the particles.
-"""
-function particle_coor_diams(particle_bbs::Dict{UUID,Vector{Int}}, d_vol::CuArray{T,3}, d_lpf_vol=nothing; depth_metrics::Function=tamura, profile_smoothing_kernel=Kernel.gaussian((5,)), diameter_metrics::Function=equivalent_diameter) where {T}
-    _validate_particle_volume_pair(d_vol, d_lpf_vol)
-    particle_coords = Dict{UUID,Vector{Float32}}()
-    for (key, value) in particle_bbs
-        @views subvol = Float32.(d_vol[value[2]:value[5], value[1]:value[4], value[3]:value[6]])
-        if !isnothing(d_lpf_vol)
-            @views subvol_lpf = Float32.(d_lpf_vol[value[2]:value[5], value[1]:value[4], value[3]:value[6]])
-            zmetric = depth_profile(depth_metrics, subvol_lpf)
-            imfilter!(zmetric, zmetric, profile_smoothing_kernel)
-            z = argmax(zmetric)
-            (x, y) = getcenterfromslice(Array(subvol_lpf[:, :, z]))
-            diam = diameter_metrics(Array(subvol[:, :, z]))
-            particle_coords[key] = [x + value[1] - 1, y + value[2] - 1, z + value[3] - 1, diam]
-        else
-            zmetric = depth_profile(depth_metrics, subvol)
-            imfilter!(zmetric, zmetric, profile_smoothing_kernel)
-            z = argmax(zmetric)
-            hostsubvol = Array(subvol[:, :, z])
-            (x, y) = getcenterfromslice(hostsubvol)
-            diam = diameter_metrics(hostsubvol)
-            particle_coords[key] = [x + value[1] - 1, y + value[2] - 1, z + value[3] - 1, diam]
-        end
+function _focus_slice(volume::Array{Float32,3}, depth_metric::Function, smoothing_kernel)
+    profile = Float32.(depth_profile(depth_metric, volume))
+    if !isnothing(smoothing_kernel) && length(profile) > 1
+        imfilter!(profile, copy(profile), smoothing_kernel)
     end
-    return particle_coords
+    return argmax(profile)
+end
+
+"""Calculate `[x, y, z]` coordinates for detected particle bounding boxes."""
+function particle_coordinates(boxes::Dict{UUID,Vector{Int}},
+                              volume::AbstractArray{T,3};
+                              depth_metrics::Function=tamura,
+                              profile_smoothing_kernel=Kernel.gaussian((5,))) where {T}
+    _validate_particle_volume_type(T, "volume")
+    coordinates = Dict{UUID,Vector{Float32}}()
+    for (id, raw_box) in boxes
+        box = _validated_box(raw_box, size(volume))
+        subvolume = _host_subvolume(volume, box)
+        z = _focus_slice(subvolume, depth_metrics, profile_smoothing_kernel)
+        x, y = getcenterfromslice(@view subvolume[:, :, z])
+        coordinates[id] = Float32[x + box[1] - 1, y + box[2] - 1, z + box[3] - 1]
+    end
+    return coordinates
+end
+
+function equivalent_diameter(array::AbstractMatrix{<:AbstractFloat})
+    isempty(array) && return 0.0
+    threshold = find_threshold(array, HistogramThresholding.Otsu())
+    return 2 * sqrt(count(<=(threshold), array) / π)
+end
+
+"""Calculate `[x, y, z, equivalent_diameter]` for each particle box."""
+function particle_coor_diams(boxes::Dict{UUID,Vector{Int}},
+                             volume::AbstractArray{T,3}, filtered=nothing;
+                             depth_metrics::Function=tamura,
+                             profile_smoothing_kernel=Kernel.gaussian((5,)),
+                             diameter_metrics::Function=equivalent_diameter) where {T}
+    _validate_particle_volume_pair(volume, filtered)
+    result = Dict{UUID,Vector{Float32}}()
+    for (id, raw_box) in boxes
+        box = _validated_box(raw_box, size(volume))
+        raw = _host_subvolume(volume, box)
+        focus_volume = isnothing(filtered) ? raw : _host_subvolume(filtered, box)
+        z = _focus_slice(focus_volume, depth_metrics, profile_smoothing_kernel)
+        x, y = getcenterfromslice(@view focus_volume[:, :, z])
+        diameter = diameter_metrics(@view raw[:, :, z])
+        result[id] = Float32[x + box[1] - 1, y + box[2] - 1,
+                             z + box[3] - 1, diameter]
+    end
+    return result
 end

@@ -1,0 +1,32 @@
+name: Optional integrations
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  plots:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      GKSwstype: '100'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: julia-actions/setup-julia@v3
+        with:
+          version: '1.12'
+      - uses: julia-actions/cache@v3
+      - name: Configure plotting environment
+        shell: julia --project=test/environments/plotting --color=yes {0}
+        run: |
+          using Pkg
+          Pkg.develop(path=pwd())
+          Pkg.instantiate()
+      - name: Test Plots extension
+        run: julia --project=test/environments/plotting --startup-file=no test/environments/plotting/runtests.jl

@@ -1,0 +1,46 @@
+name: NVIDIA CUDA
+
+on:
+  # Deliberately no pull_request trigger: this job executes repository code on
+  # persistent self-hosted hardware. Release branches are tested by push.
+  push:
+    branches: [main, 'codex/**']
+    tags: ['v*']
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ startsWith(github.ref, 'refs/pull/') }}
+
+permissions:
+  contents: read
+
+jobs:
+  cuda:
+    name: CUDA shared contract
+    runs-on: [self-hosted, Linux, X64]
+    timeout-minutes: 60
+    env:
+      CUDA_VISIBLE_DEVICES: '0'
+    steps:
+      - uses: actions/checkout@v4
+      - name: Require an NVIDIA GPU
+        run: nvidia-smi
+      - uses: julia-actions/setup-julia@v3
+        with:
+          version: '1.12'
+          arch: x64
+      - name: Configure isolated CUDA environment
+        shell: julia --project=test/environments/cuda --color=yes {0}
+        run: |
+          using Pkg
+          Pkg.develop(path=pwd())
+          Pkg.instantiate()
+      - name: Require functional CUDA.jl
+        shell: julia --project=test/environments/cuda --color=yes {0}
+        run: |
+          using CUDA
+          CUDA.functional() || error("CUDA is not functional on this runner")
+          CUDA.versioninfo()
+      - name: Run CUDA contract and integration tests
+        run: julia --project=test/environments/cuda --startup-file=no --check-bounds=yes test/environments/cuda/runtests.jl
