@@ -5,15 +5,17 @@ an existing NVIDIA workflow can be migrated incrementally.
 
 | v0.2 | v1 |
 |---|---|
-| `cu_transfer_sqrt_arr(n, λ, dx)` | `transfer_sqrt(b, n, λ, dx)` |
-| `cu_transfer(z, n, λ, s)` | `transfer(b, z, λ, s)` |
-| `cu_gabor_wavefront(cu(image))` | `gabor_wavefront(b, image)` |
+| `cu_transfer_sqrt_arr(n, λ, dx)` | `propagation_grid(n, λ, dx)` |
+| `cu_transfer(z, n, λ, grid)` | `propagation_kernel(z, λ, grid)` |
+| `cu_gabor_wavefront(cu(image))` | `gabor_wavefront(image)` |
 | `cu_phase_retrieval_holo(...)` | `PhaseRetrievalPlan` + `phase_retrieval` |
 | `cu_get_reconst_vol(...)` | `ReconstructionPlan` + `reconstruct` |
 | `cu_get_reconst_xyprojection(...)` | `xyprojection` |
 | `cu_get_reconst_vol_and_xyprojection(...)` | `reconstruct_and_projection` |
 | `cu_dilate(binary)` | `dilate(binary)` |
-| `CuWavefront`, `CuTransfer`, … | `Wavefront`, `Transfer`, … |
+| `CuTransferSqrtPart` | `PropagationGrid` |
+| `CuTransfer` | `PropagationKernel` |
+| `CuWavefront` | `Wavefront` |
 
 ## Minimal rewrite
 
@@ -28,20 +30,25 @@ volume = cu_get_reconst_vol(wave, front, step, slices)
 
 # v1
 using ParticleHolography
-b = backend(:cpu) # or load CUDA/Metal and choose that backend
-s = transfer_sqrt(b, n, λ, dx)
-front = transfer(b, -z0, λ, s)
-step = transfer(b, -dz, λ, s)
-wave = gabor_wavefront(b, image)
-plan = ReconstructionPlan(b, front, step)
-volume = reconstruct(plan, wave, slices)
+backend(:cpu) # or load CUDA/Metal and select it once
+grid = propagation_grid(n, λ, dx)
+front = propagation_kernel(-z0, λ, grid)
+step = propagation_kernel(-dz, λ, grid)
+wave = gabor_wavefront(image)
+request = ReconstructionRequest(slices; volume=Float32)
+plan = ReconstructionPlan(front, step; request)
+volume = reconstruct(plan, wave).volume
 ```
 
 ## Behaviour changes
 
 - CPU-only import no longer loads CUDA, a GPU driver, Makie, or Plots.
+- `backend(:cpu)`, `backend(:metal)`, or `backend(:cuda)` sets the process-wide
+  default used by later backend-less calls.
 - New reconstruction functions default to unclipped `Float32`. Deprecated
   `cu_get_*` wrappers retain clipped `N0f8` defaults where v0.2 did.
+- `ReconstructionRequest` produces a requested volume and MinIP together in one
+  depth scan and performs a conservative memory preflight.
 - Transfer and filter arrays use FFT-native order. Manually constructed centred
   arrays must be reordered before wrapping.
 - Combined projection uses unquantised `Float32` intensity even if the stored
@@ -53,6 +60,9 @@ volume = reconstruct(plan, wave, slices)
 - `CUDABackend` and `MetalBackend` implementation types are not exported because
   CUDA.jl/Metal.jl export names with the same spelling. Use `backend(:cuda)` and
   `backend(:metal)`.
+- `transfer_sqrt`/`TransferSqrtPart` and `transfer`/`Transfer` remain deprecated
+  aliases for `propagation_grid`/`PropagationGrid` and
+  `propagation_kernel`/`PropagationKernel`.
 
 ## Package environments
 

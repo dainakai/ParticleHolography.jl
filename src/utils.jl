@@ -226,14 +226,14 @@ function _as_uint8_image(image::AbstractMatrix)
 end
 
 """
-    make_background_mode(images; backend=CPUBackend())
+    make_background_mode(images; backend=backend())
 
 Compute the per-pixel 8-bit mode without allocating the former
 `256 × height × width` vote volume. GPU inputs are staged to the host once;
 this preprocessing step deliberately favours bounded memory over acceleration.
 """
 function make_background_mode(images::AbstractVector{<:AbstractMatrix};
-                              backend::AbstractBackend=CPUBackend())
+                              backend::AbstractBackend=_DEFAULT_BACKEND[])
     isempty(images) && throw(ArgumentError("images cannot be empty."))
     shape = size(first(images))
     all(image -> size(image) == shape, images) || throw(DimensionMismatch("All background images must have the same size."))
@@ -262,14 +262,7 @@ function pad_with_mean(image::AbstractMatrix, padsize::Integer)
     padsize > max(size(image)...) || throw(ArgumentError(
         "padsize must be larger than both image dimensions; got $padsize and $(size(image)).",
     ))
-    output = similar(image, eltype(image), (padsize, padsize))
-    fill!(output, convert(eltype(image), mean(to_host(image))))
-    first_row = fld(padsize - size(image, 1), 2) + 1
-    first_col = fld(padsize - size(image, 2), 2) + 1
-    rows = first_row:first_row + size(image, 1) - 1
-    cols = first_col:first_col + size(image, 2) - 1
-    @views output[rows, cols] .= image
-    return output
+    return pad2d(image, (Int(padsize), Int(padsize)); mode=:mean)
 end
 
 

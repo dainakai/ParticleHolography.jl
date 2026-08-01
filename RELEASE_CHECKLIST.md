@@ -5,18 +5,25 @@
 - [x] `Project.toml` version is 1.0.0 and Julia compat starts at 1.10.
 - [x] CPU import does not require CUDA, Metal, Makie, or Plots.
 - [x] CPU/CUDA/Metal use one backend-neutral optical API.
+- [x] one process-wide backend selection drives calls that omit a backend.
+- [x] propagation types use `PropagationGrid` and `PropagationKernel` names.
+- [x] all volume/MinIP output combinations share one reconstruction depth scan.
+- [x] mean padding stores only the unpadded output field of view.
+- [x] plan/output memory preflight and `check_memory=false` override are tested.
 - [x] v0.2 compatibility wrappers and migration table exist.
 - [x] FFT plans and major work buffers are reusable.
 - [x] tests write temporary files only under `mktempdir`.
 
 ## Local verification
 
-- [x] CPU core: 99/99 tests pass on Julia 1.12.6.
-- [x] CUDA shared contract: 10/10 tests pass on RTX 4080 SUPER.
+- [x] CPU core: 180/180 tests pass on Julia 1.12.6.
+- [x] CUDA shared/physical contract: 19/19 tests pass on RTX 4080 SUPER.
 - [x] CUDA integration/legacy: 7/7 tests pass on RTX 4080 SUPER.
+- [x] CPU line coverage is 90.1% overall and 96.7% for the optical core.
 - [ ] CPU suite passes on the minimum Julia 1.10 runtime.
 - [x] docs build completes without unresolved references.
 - [x] plotting extension test passes headlessly, including diagnostic files (5/5).
+- [x] phdemo tests pass (14/14), including documented CPU doctor/smoke commands.
 - [x] representative v0.2/v1 reconstruction regression is recorded.
 
 ## GitHub Actions

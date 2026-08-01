@@ -191,6 +191,10 @@ function piv_map(b::AbstractBackend, image1::AbstractMatrix{<:Real},
     return _piv_map(b, image1, image2, grid_size, interrogation_size, search_size)
 end
 
+piv_map(image1::AbstractMatrix{<:Real}, image2::AbstractMatrix{<:Real};
+        backend::AbstractBackend=_DEFAULT_BACKEND[], kwargs...) =
+    piv_map(backend, image1, image2; kwargs...)
+
 function _save_distortion_diagnostics(args...; kwargs...)
     extension = Base.get_extension(@__MODULE__, :ParticleHolographyPlotsExt)
     isnothing(extension) && throw(ArgumentError("verbose diagnostics require Plots.jl. Install it and run `using Plots` before calling get_distortion_coefficients(...; verbose=true)."))
@@ -200,7 +204,7 @@ end
 """Estimate the 12 quadratic distortion coefficients from a stereo image pair."""
 function get_distortion_coefficients(image1::AbstractMatrix{<:Real},
                                      image2::AbstractMatrix{<:Real};
-                                     backend::AbstractBackend=CPUBackend(),
+                                     backend::AbstractBackend=_DEFAULT_BACKEND[],
                                      verbose::Bool=false, save_dir::AbstractString="",
                                      grid_size::Int=128, interrogation_size::Int=128,
                                      search_size::Int=256, save_extension::AbstractString="png",

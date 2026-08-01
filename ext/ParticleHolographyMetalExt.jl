@@ -4,7 +4,7 @@ using ParticleHolography
 import Metal
 
 import ParticleHolography: MetalBackend, backendof, isfunctional
-import ParticleHolography: _activate!, _synchronize, _to_backend, _to_host
+import ParticleHolography: _activate!, _copy_to_host!, _synchronize, _to_backend, _to_host
 
 function isfunctional(backend::MetalBackend)
     (isnothing(backend.device) || backend.device == 0) || return false
@@ -26,6 +26,7 @@ _to_backend(backend::MetalBackend, array::AbstractArray) = (_activate!(backend);
 _to_backend(::MetalBackend, value) = value
 _to_host(array::Metal.WrappedMtlArray) = Array(array)
 backendof(::Metal.WrappedMtlArray) = MetalBackend()
+_copy_to_host!(destination::Array, source::Metal.WrappedMtlArray) = copyto!(destination, source)
 
 function _synchronize(backend::MetalBackend)
     _activate!(backend)

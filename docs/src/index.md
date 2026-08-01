@@ -7,7 +7,9 @@ CurrentModule = ParticleHolography
 ParticleHolography.jl turns one or two inline hologram images into a numerical
 3-D light-intensity volume, detected particle positions, and particle tracks.
 Version 1 uses the same processing code on a CPU, Apple Metal GPU, or NVIDIA
-CUDA GPU; the selected backend controls where arrays and FFTs run.
+CUDA GPU.
+One setup call selects the process-wide default backend that controls where
+arrays and FFTs run.
 
 You do not need to understand holography before starting. Read the pages in
 this order:
@@ -27,7 +29,7 @@ this order:
 camera image(s)
     → optional background and camera correction
     → complex wavefront (Gabor or phase retrieval)
-    → 3-D reconstruction / minimum-intensity projection
+    → requested 3-D volume and/or minimum-intensity projection in one depth scan
     → threshold and connected components
     → particle coordinates and diameters
     → frame-to-frame correspondences and trajectories
@@ -56,6 +58,10 @@ installing Metal.jl or CUDA.jl.
 | `backend(:cpu)` | none | learning, CI, reference results, any machine |
 | `backend(:metal)` | Metal.jl | Apple-silicon Mac, macOS 14+ |
 | `backend(:cuda)` | CUDA.jl | NVIDIA GPU workstation or server |
+
+After this selection, functions such as `propagation_grid`,
+`propagation_kernel`, and `gabor_wavefront` do not need a backend argument.
+Plans record the backend of their propagation kernels.
 
 Reconstruction and portable dilation stay on the selected device. Connected
 component labeling and particle metrics use a documented host stage so they

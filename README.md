@@ -22,14 +22,18 @@ your application:
 
 ```julia
 using ParticleHolography
-b = backend(:cpu)
+backend(:cpu)
 
 # Apple silicon / macOS 14+
-# Pkg.add("Metal"); using Metal; b = backend(:metal)
+# Pkg.add("Metal"); using Metal; backend(:metal)
 
 # NVIDIA
-# Pkg.add("CUDA"); using CUDA; b = backend(:cuda)
+# Pkg.add("CUDA"); using CUDA; backend(:cuda)
 ```
+
+The selection is process-wide. After this one setup call, the same processing
+code runs on the selected backend. Explicit backend arguments remain available
+for side-by-side CPU/GPU comparisons.
 
 ## Small reconstruction
 
@@ -38,19 +42,27 @@ n = size(hologram, 1)
 wavelength = 0.6328       # μm
 pixel_pitch = 10.0        # μm
 
-sqrt_part = transfer_sqrt(b, n, wavelength, pixel_pitch)
-front = transfer(b, -80_000.0, wavelength, sqrt_part)
-step = transfer(b, -100.0, wavelength, sqrt_part)
-wavefront = gabor_wavefront(b, hologram)
+grid = propagation_grid(n, wavelength, pixel_pitch)
+front = propagation_kernel(-80_000.0, wavelength, grid)
+step = propagation_kernel(-100.0, wavelength, grid)
+wavefront = gabor_wavefront(hologram)
 
-plan = ReconstructionPlan(b, front, step)
-volume, projection = reconstruct_and_projection(plan, wavefront, 1_000)
-projection_host = to_host(projection)
+request = ReconstructionRequest(1_000;
+    volume=Float32,
+    min_projection=N0f8,
+)
+plan = ReconstructionPlan(front, step; request)
+@show memory_diagnostic(plan, request)
+
+result = reconstruct(plan, wavefront)
+volume = result.volume
+projection = to_host(result.min_projection)
 ```
 
-Plans reuse FFT plans and work buffers across frames. New reconstruction APIs
-return unclipped `Float32` by default. Deprecated v0.2 `cu_*` names remain as
-CUDA wrappers for incremental migration.
+The volume and minimum-intensity projection are produced in one depth scan.
+Plans reuse FFT plans and work buffers across frames and reject an allocation
+that the conservative memory preflight considers unsafe. Deprecated v0.2
+`cu_*`, `transfer_sqrt`, and `transfer` names remain as migration wrappers.
 
 ## Learn and run real data
 

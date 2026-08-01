@@ -4,7 +4,8 @@ using ParticleHolography
 import CUDA
 
 import ParticleHolography: CUDABackend, backendof, isfunctional
-import ParticleHolography: _activate!, _piv_map, _synchronize, _to_backend, _to_host
+import ParticleHolography: _activate!, _available_memory, _copy_to_host!
+import ParticleHolography: _piv_map, _synchronize, _to_backend, _to_host
 
 function isfunctional(backend::CUDABackend)
     return try
@@ -22,7 +23,9 @@ end
 
 function _to_backend(backend::CUDABackend, array::CUDA.AnyCuArray)
     _activate!(backend)
-    return isnothing(backend.device) ? array : CUDA.CuArray(Array(array))
+    same_device = isnothing(backend.device) ||
+                  CUDA.deviceid(CUDA.device(array)) == backend.device
+    return same_device ? array : CUDA.CuArray(Array(array))
 end
 
 function _to_backend(backend::CUDABackend, array::AbstractArray)
@@ -32,7 +35,10 @@ end
 
 _to_backend(::CUDABackend, value) = value
 _to_host(array::CUDA.AnyCuArray) = Array(array)
-backendof(::CUDA.AnyCuArray) = CUDABackend()
+backendof(array::CUDA.AnyCuArray) =
+    CUDABackend(CUDA.deviceid(CUDA.device(array)))
+_available_memory(backend::CUDABackend) = (_activate!(backend); Int(CUDA.free_memory()))
+_copy_to_host!(destination::Array, source::CUDA.AnyCuArray) = copyto!(destination, source)
 
 function _synchronize(backend::CUDABackend)
     _activate!(backend)

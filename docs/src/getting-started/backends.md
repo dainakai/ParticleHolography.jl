@@ -1,9 +1,22 @@
 # Choose CPU, Metal, or CUDA
 
-The backend is an explicit object stored in reusable plans. ParticleHolography
-does not change a process-global GPU preference. This makes CPU/GPU comparisons
-possible in one Julia process and prevents the package from changing another
-library's device choice.
+Call `backend(:cpu)`, `backend(:metal)`, or `backend(:cuda)` once during program
+setup.
+The selected backend becomes the process-wide default for later calls that omit
+a backend argument, and each reusable plan records that selection.
+
+```julia
+using ParticleHolography
+
+backend(:cpu)
+grid = propagation_grid(1024, 0.6328, 10.0)
+wavefront = gabor_wavefront(hologram)
+```
+
+`backend()` returns the current selection.
+Changing it while concurrent tasks are using ParticleHolography is unsupported.
+For simultaneous CPU/GPU work or numerical comparisons, retain the returned
+object and pass it explicitly, such as `propagation_grid(cpu, ...)`.
 
 ## CPU
 
@@ -11,7 +24,7 @@ CPU needs no optional package and works on Linux, macOS, and Windows.
 
 ```julia
 using ParticleHolography
-b = backend(:cpu)
+backend(:cpu)
 ```
 
 Use CPU first when checking units, array shapes, and thresholds. It can be slow
@@ -27,11 +40,15 @@ Pkg.add("CUDA")
 using ParticleHolography
 using CUDA                 # activates ParticleHolographyCUDAExt
 CUDA.functional() || error("CUDA is not functional")
-b = backend(:cuda)
+backend(:cuda)
 ```
 
 `backend(:cuda; device=0)` selects a zero-based CUDA device before allocation.
 Use `CUDA.versioninfo()` when reporting setup problems.
+See the official [CUDA.jl documentation](https://cuda.juliagpu.org/stable/),
+[CuArray guide](https://cuda.juliagpu.org/stable/usage/array/), and
+[GPU memory guide](https://cuda.juliagpu.org/stable/usage/memory/) for runtime,
+array, and memory-pool details.
 
 ## Apple Metal
 
@@ -45,7 +62,7 @@ Pkg.add("Metal")
 using ParticleHolography
 using Metal                # activates ParticleHolographyMetalExt
 Metal.functional() || error("Metal is not functional")
-b = backend(:metal)
+backend(:metal)
 ```
 
 Metal support is tested on GitHub's arm64 `macos-15` runner with the same small
@@ -54,25 +71,33 @@ best-effort; a CI failure is reported rather than silently skipping the test.
 See the [Metal.jl 1.10 release notes](https://juliagpu.org/post/2026-07-01-metal-1.10/index.html)
 and [GitHub-hosted runner reference](https://docs.github.com/en/actions/reference/runners/github-hosted-runners)
 for the maintained platform requirements and runner architecture.
+The official [Metal.jl documentation](https://metal.juliagpu.org/stable/) and
+[MtlArray guide](https://metal.juliagpu.org/stable/usage/array/) explain device
+arrays and supported element types.
 
 ## One processing function
 
 The processing function does not mention a GPU package:
 
 ```julia
-function reconstruct_frame(hologram, b; wavelength, pixel_pitch,
+function reconstruct_frame(hologram; wavelength, pixel_pitch,
                            front_distance, slice_spacing, slices)
     n = size(hologram, 1)
-    sqrt_part = transfer_sqrt(b, n, wavelength, pixel_pitch)
-    front = transfer(b, -front_distance, wavelength, sqrt_part)
-    step = transfer(b, -slice_spacing, wavelength, sqrt_part)
-    wavefront = gabor_wavefront(b, hologram)
-    plan = ReconstructionPlan(b, front, step)
-    return reconstruct_and_projection(plan, wavefront, slices)
+    grid = propagation_grid(n, wavelength, pixel_pitch)
+    front = propagation_kernel(-front_distance, wavelength, grid)
+    step = propagation_kernel(-slice_spacing, wavelength, grid)
+    wavefront = gabor_wavefront(hologram)
+    request = ReconstructionRequest(slices;
+        volume=Float32,
+        min_projection=N0f8,
+    )
+    plan = ReconstructionPlan(front, step; request)
+    return reconstruct(plan, wavefront)
 end
 ```
 
-Only `b` and the optional package loaded by the environment change.
+Only the setup call and optional package loaded by the environment change.
+The processing function is identical on all three backends.
 
 ## What stays on the device
 
@@ -88,7 +113,12 @@ Only `b` and the optional package loaded by the environment change.
 
 The host stages are deliberate compatibility boundaries, not silent backend
 changes. `to_host(x)` performs the explicit final copy when saving or comparing
-results. `synchronize_backend(b)` is available for timing asynchronous GPU work.
+results. `synchronize_backend()` is available for timing asynchronous GPU work.
+
+CPU FFT execution is supplied by [FFTW.jl](https://github.com/JuliaMath/FFTW.jl).
+The shared planning interface comes from
+[AbstractFFTs.jl](https://juliamath.github.io/AbstractFFTs.jl/stable/api/),
+which CUDA.jl and Metal.jl implement for their device arrays.
 
 ## Discovery and errors
 
@@ -96,3 +126,7 @@ results. `synchronize_backend(b)` is available for timing asynchronous GPU work.
 installed package does not activate its extension until `using CUDA` or
 `using Metal` has run. `backend(:auto)` prefers CUDA, then Metal, then CPU, but
 explicit selection is recommended for reproducible analysis.
+
+Both Plots.jl and ParticleHolography export a function named `backend`.
+If an interactive session runs `using Plots`, select the execution backend as
+`ParticleHolography.backend(:cpu)` or import only the plotting names you need.

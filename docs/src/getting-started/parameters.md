@@ -34,11 +34,12 @@ Julia arrays use `(row, column, slice)`, corresponding to `(y, x, z)`. Particle
 coordinate vectors use `[x, y, z]`. Bounding boxes use
 `[xmin, ymin, zmin, xmax, ymax, zmax]`, with inclusive one-based indices.
 
-`transfer(b, distance, ...)` uses positive distance in the mathematical
-propagation direction. Camera-to-object reconstruction normally uses negative
-distances. Particle plotting defaults to a negative z scale to match the
-historical optical-axis display convention; set `scaling` explicitly for your
-laboratory frame.
+`propagation_kernel(distance, ...)` uses positive distance in the mathematical
+propagation direction.
+Camera-to-object reconstruction normally uses negative distances.
+Particle plotting defaults to a negative z scale to match the historical
+optical-axis display convention; set `scaling` explicitly for your laboratory
+frame.
 
 ## Choose a depth range
 

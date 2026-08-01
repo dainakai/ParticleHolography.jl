@@ -12,7 +12,7 @@ a real-valued array, normally scaled near the interval 0–1.
 ```@example quickstart
 using ParticleHolography
 
-b = backend(:cpu)
+backend(:cpu)
 n = 32
 rows = reshape(Float32.(1:n), n, 1)
 cols = reshape(Float32.(1:n), 1, n)
@@ -33,9 +33,9 @@ front_distance = 800.0   # μm, camera to first reconstructed plane
 slice_spacing = 20.0     # μm
 slices = 8
 
-sqrt_part = transfer_sqrt(b, n, wavelength, pixel_pitch)
-front = transfer(b, -front_distance, wavelength, sqrt_part)
-step = transfer(b, -slice_spacing, wavelength, sqrt_part)
+grid = propagation_grid(n, wavelength, pixel_pitch)
+front = propagation_kernel(-front_distance, wavelength, grid)
+step = propagation_kernel(-slice_spacing, wavelength, grid)
 nothing
 ```
 
@@ -48,16 +48,24 @@ Gabor reconstruction assumes zero phase at the camera and uses the square root
 of measured intensity as the wavefront amplitude.
 
 ```@example quickstart
-wavefront = gabor_wavefront(b, hologram)
-plan = ReconstructionPlan(b, front, step)
-volume, xy_projection = reconstruct_and_projection(plan, wavefront, slices)
-(size(volume), size(xy_projection), eltype(volume), extrema(volume))
+wavefront = gabor_wavefront(hologram)
+request = ReconstructionRequest(slices;
+    volume=Float32,
+    min_projection=N0f8,
+)
+plan = ReconstructionPlan(front, step; request)
+diagnostic = memory_diagnostic(plan, request)
+result = reconstruct(plan, wavefront)
+(size(result.volume), size(result.min_projection),
+ eltype(result.volume), eltype(result.min_projection), diagnostic.safe)
 ```
 
-`volume[:, :, z]` is reconstructed intensity at one depth. `xy_projection` is
-the minimum intensity over depth, useful because opaque particles reconstruct
-as dark regions. The default v1 output is `Float32`; this avoids the clipping
-and quantisation that occurred when v0.2 returned `N0f8` by default.
+`result.volume[:, :, z]` is reconstructed intensity at one depth.
+`result.min_projection` is the minimum intensity over depth, useful because
+opaque particles reconstruct as dark regions.
+The `Float32` volume preserves measurement values, while the compact `N0f8`
+projection is convenient for display and storage.
+Both outputs came from one propagation loop.
 
 ## 4. Reuse the plan for a sequence
 
@@ -65,10 +73,11 @@ FFT plans and the largest work arrays are expensive to create. Build a
 `ReconstructionPlan` once for a fixed image shape and geometry, then reuse it.
 
 ```julia
-plan = ReconstructionPlan(b, front, step)
+request = ReconstructionRequest(slices; volume=Float32, min_projection=N0f8)
+plan = ReconstructionPlan(front, step; request)
 for hologram in frames
-    wavefront = gabor_wavefront(b, hologram)
-    volume = reconstruct(plan, wavefront, slices)
+    wavefront = gabor_wavefront(hologram)
+    result = reconstruct(plan, wavefront)
     # threshold, detect, and save this frame
 end
 ```
@@ -76,6 +85,10 @@ end
 The allocating functions are convenient for notebooks. For tighter control,
 preallocate arrays and use `reconstruct!`, `xyprojection!`, or
 `reconstruct_and_projection!`.
+
+Use `reconstruct_padded(plan, wavefront; mode=:mean)` when the plan was built
+for a larger working plane and the border should use the input wavefront mean
+rather than zero.
 
 ## Next
 

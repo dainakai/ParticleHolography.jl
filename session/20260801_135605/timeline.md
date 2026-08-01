@@ -54,3 +54,27 @@
 - Security: 永続 self-hosted CUDA runner で外部 pull request のコードを実行しないよう、CUDA workflow から `pull_request` trigger を除外した。
 - Result: ローカルで検証済みの項目と、Julia 1.10、macOS Metal、GitHub Actions の未確認項目を `release_candidate_report.md` に分離して記録した。
 - Pending: commit、push、PR、tag、GitHub Release は許可されていないため実施していない。
+
+## 2026-08-01 16:05:00 JST
+- Result: 初回 release candidate を ParticleHolography.jl `b050823` と phdemo `1b18b56` としてローカル commit した。
+- User feedback: backend 引数の省略、光伝搬型名、処理の図解、登録済み v1 を使う phdemo 導入、依存 package の公式リンク、複合再構成出力、平均値 padding、memory 診断、物理妥当性 test、coverage 改善を追加要望として受けた。
+- Decision: 既定 backend は process-wide とし、並行 task 中の切替えは対象外、明示 backend 引数は比較用途に残す。
+- Result: 追加要望の詳細設計と完了条件を `feedback_plan.md` に記録した。
+
+## 2026-08-01 17:15:00 JST
+- Changed: `PropagationGrid`、`PropagationKernel`、`ReconstructionRequest`、`ReconstructionResult`、`MemoryDiagnostic`、`reconstruct_padded` を追加した。
+- Changed: 実数 volume、複素 wavefront volume、MinIP の全有効組合せを一回の伝搬 loop で生成し、不要な三次元配列と不要な強度計算を省くようにした。
+- Changed: 平均値または zero padding を追加し、padded plane で伝搬しながら中央の元画像領域だけを出力するようにした。
+- Changed: CPU free memory、CUDA free VRAM、Metal unified memory を基準に、既定安全係数 1.2 の事前診断と `check_memory=false` override を追加した。
+- Result: 128×128×96 の CPU 参考計測では、Float32 volume と N0f8 MinIP の同時生成は別々の二回処理より 1.76 倍高速だった。
+
+## 2026-08-01 17:38:03 JST
+- Result: CPU core 180/180、CUDA shared/physical contract 19/19、CUDA integration/legacy 7/7、Plots 5/5、phdemo 14/14 が合格した。
+- Result: CPU line coverage は全体 90.1%、`src/holofunc.jl` は 96.7% だった。
+- Result: 平面波解析解、往復伝搬、既知深度への再集束を CPU で検証し、同じ既知深度 test と CPU 数値比較を RTX 4080 SUPER の CUDA contract で検証した。
+- Changed: 「From hologram to particles」に public API で再生成する四 panel 図を追加し、CUDA.jl、Metal.jl、AbstractFFTs.jl、FFTW.jl の公式文書へ接続した。
+- Result: Documenter build と Chrome 描画が成功し、更新済み文書を `http://127.0.0.1:8766/` で提供している。
+- Changed: phdemo の通常導入を phdemo の clone と `Pkg.instantiate()` だけにし、ParticleHolography の clone と `Pkg.develop` は未公開版を同時開発する節へ分離した。
+- Result: phdemo `doctor` は full 設定に 4.06 GiB 必要で、111.13 GiB の host 空き memory に対して安全と診断した。
+- Result: 文書確認後の追加実装を ParticleHolography.jl の `feat!: add default backend and unified reconstruction outputs` と phdemo `948e1eb` へローカル commit した。
+- Pending: push、pull request、tag、GitHub Release、macOS Metal workflow は未実施である。

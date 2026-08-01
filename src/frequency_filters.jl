@@ -31,7 +31,7 @@ function rectangle_filter(b::AbstractBackend, propagation_distance::Real,
 end
 
 rectangle_filter(propagation_distance::Real, wavelength::Real, image_length::Int,
-                 pixel_pitch::Real; backend::AbstractBackend=CPUBackend()) =
+                 pixel_pitch::Real; backend::AbstractBackend=_DEFAULT_BACKEND[]) =
     rectangle_filter(backend, propagation_distance, wavelength, image_length, pixel_pitch)
 
 """Construct the sixth-order super-Gaussian low-pass filter from Fugal (2009)."""
@@ -54,7 +54,7 @@ end
 
 super_gaussian_filter(propagation_distance::Real, wavelength::Real,
                       image_length::Int, pixel_pitch::Real;
-                      backend::AbstractBackend=CPUBackend()) =
+                      backend::AbstractBackend=_DEFAULT_BACKEND[]) =
     super_gaussian_filter(backend, propagation_distance, wavelength, image_length, pixel_pitch)
 
 """Apply an FFT-native low-pass filter in place to a wavefront."""

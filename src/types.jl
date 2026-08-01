@@ -1,13 +1,14 @@
-export TransferSqrtPart, Transfer, Wavefront, LowPassFilter
+export PropagationGrid, PropagationKernel, Wavefront, LowPassFilter
+export TransferSqrtPart, Transfer
 export CuTransferSqrtPart, CuTransfer, CuWavefront, CuLowPassFilter
 
-"""FFT-native square-root term used to construct angular-spectrum transfers."""
-struct TransferSqrtPart{T<:AbstractFloat,A<:AbstractMatrix{T}} <: AbstractMatrix{T}
+"""Distance-independent spatial-frequency grid for angular-spectrum propagation."""
+struct PropagationGrid{T<:AbstractFloat,A<:AbstractMatrix{T}} <: AbstractMatrix{T}
     data::A
 end
 
-"""Angular-spectrum transfer function stored in FFT-native frequency order."""
-struct Transfer{T<:Complex,A<:AbstractMatrix{T}} <: AbstractMatrix{T}
+"""Distance-dependent angular-spectrum multiplier in FFT-native order."""
+struct PropagationKernel{T<:Complex,A<:AbstractMatrix{T}} <: AbstractMatrix{T}
     data::A
 end
 
@@ -21,7 +22,7 @@ struct LowPassFilter{T<:AbstractFloat,A<:AbstractMatrix{T}} <: AbstractMatrix{T}
     data::A
 end
 
-for Wrapper in (TransferSqrtPart, Transfer, Wavefront, LowPassFilter)
+for Wrapper in (PropagationGrid, PropagationKernel, Wavefront, LowPassFilter)
     @eval begin
         Base.size(x::$Wrapper) = size(x.data)
         Base.axes(x::$Wrapper) = axes(x.data)
@@ -35,14 +36,16 @@ for Wrapper in (TransferSqrtPart, Transfer, Wavefront, LowPassFilter)
     end
 end
 
-backendof(x::Union{TransferSqrtPart,Transfer,Wavefront,LowPassFilter}) = backendof(x.data)
-to_host(x::TransferSqrtPart) = TransferSqrtPart(to_host(x.data))
-to_host(x::Transfer) = Transfer(to_host(x.data))
+backendof(x::Union{PropagationGrid,PropagationKernel,Wavefront,LowPassFilter}) = backendof(x.data)
+to_host(x::PropagationGrid) = PropagationGrid(to_host(x.data))
+to_host(x::PropagationKernel) = PropagationKernel(to_host(x.data))
 to_host(x::Wavefront) = Wavefront(to_host(x.data))
 to_host(x::LowPassFilter) = LowPassFilter(to_host(x.data))
 
-# v0.2 compatibility aliases. New code should use the backend-neutral names.
-const CuTransferSqrtPart = TransferSqrtPart
-const CuTransfer = Transfer
+# Compatibility aliases. New code should use PropagationGrid/PropagationKernel.
+const TransferSqrtPart = PropagationGrid
+const Transfer = PropagationKernel
+const CuTransferSqrtPart = PropagationGrid
+const CuTransfer = PropagationKernel
 const CuWavefront = Wavefront
 const CuLowPassFilter = LowPassFilter

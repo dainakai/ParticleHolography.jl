@@ -9,6 +9,7 @@ include(joinpath(@__DIR__, "..", "..", "shared", "backend_contract.jl"))
     @test :cuda in available_backends()
     array = CUDA.zeros(Float32, 2, 2)
     @test backendof(array) isa ParticleHolography.CUDABackend
+    @test backendof(array).device == CUDA.deviceid(CUDA.device(array))
     @test backendof(@view array[:, 1:1]) isa ParticleHolography.CUDABackend
     run_backend_contract(backend(:cuda))
 end

@@ -21,10 +21,15 @@ as designed.
 
 ## Out of memory
 
-Estimate the dense volume before reconstruction. Use `xyprojection` instead of
-`reconstruct` if only a projection is needed, reduce slice count/crop size, or
-process one frame at a time. Reuse plans. Setting the output to `N0f8` saves
-memory but loses measurement precision.
+Inspect `memory_diagnostic(backend(), working_shape, request)` before building
+the plan.
+If only a projection is needed, use
+`ReconstructionRequest(slices; volume=nothing, min_projection=Float32)`.
+Otherwise reduce the slice count or crop size, process one frame at a time, and
+reuse plans.
+Setting an output to `N0f8` saves memory but loses measurement precision.
+`check_memory=false` bypasses the conservative check and should be used only
+after independently confirming that the allocation is safe.
 
 ## Reconstruction is finite but physically wrong
 
@@ -48,5 +53,6 @@ Plotting is optional. Install Plots.jl and run `using Plots` before calling
 
 ## Old `cu_*` code warns
 
-The compatibility wrappers remain for v1 but require `using CUDA`. Follow
-[Migrate from v0.2](@ref) to select a backend explicitly and gain plan reuse.
+The compatibility wrappers remain for v1 but require `using CUDA`.
+Follow [Migrate from v0.2](@ref) to select a default backend once and gain plan
+reuse.

@@ -2,7 +2,10 @@ using ParticleHolography
 using Documenter
 using DocumenterCitations
 
+include("generate_assets.jl")
+
 function build_documentation()
+    generate_workflow_figure()
     DocMeta.setdocmeta!(ParticleHolography, :DocTestSetup,
                         :(using ParticleHolography); recursive=true)
     bibliography = CitationBibliography(joinpath(@__DIR__, "src", "refs.bib"))

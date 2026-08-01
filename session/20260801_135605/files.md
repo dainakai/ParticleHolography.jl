@@ -43,6 +43,17 @@
 - `session/20260801_135605/timeline.md` - CUDA baseline と Metal FFT/CI 調査を追記。
 - `session/20260801_135605/files.md` - session artifact 一覧を更新。
 - `session/20260801_135605/handoff.md` - 次の実装開始点を更新。
+- `.codecov.yml` - project coverage 90% と patch coverage 90% の status target を追加。
+- `docs/generate_assets.jl` - hologram から粒子検出までの四 panel 図を public API から再生成する script を追加。
+- `docs/src/assets/hologram-to-particles.png` - 初学者向け workflow 図を追加。
+- `src/backends.jl` - process-wide 既定 backend、引数なし取得、memory probe を追加。
+- `src/types.jl` - `PropagationGrid` と `PropagationKernel` を主型名に変更。
+- `src/holofunc.jl` - 複合出力の一回走査、平均値 padding、memory 診断、物理 API test 対応を追加。
+- `test/core/optics.jl` - 全出力組合せ、memory、padding、解析解、往復伝搬、既知深度再集束を追加。
+- `test/shared/backend_contract.jl` - CUDA と Metal の既知深度再集束契約を追加。
+- `../phdemo/README.md` - 登録済み v1 を `Pkg.instantiate()` で利用する通常導入と local development を分離。
+- `../phdemo/src/PhDemo.jl` - process-wide backend と複合再構成出力、memory doctor を利用するように変更。
+- `../phdemo/.github/workflows/CI.yml` - 登録済み v1 を通常利用し、未公開 revision override を任意入力に変更。
 
 ## Generated
 - `session/20260801_135605/` - 長期作業の再開用セッション記録。
@@ -50,3 +61,4 @@
 - `session/20260801_135605/regression_v1.jl` - v0.2.4基準とv1 CPU/CUDAを同一入力で比較する再現driver。
 - `session/20260801_135605/regression_report.md` - v0.2.4/v1の実GPU数値回帰結果。
 - `session/20260801_135605/release_candidate_report.md` - 実装内容、検証結果、未確認事項、公開順序をまとめた最終報告書。
+- `session/20260801_135605/feedback_plan.md` - 文書確認後に追加された既定 backend、型名、再構成出力、メモリ診断、妥当性テスト、図、phdemo の設計。
