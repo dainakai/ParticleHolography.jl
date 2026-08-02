@@ -65,7 +65,7 @@ Phase retrieval holography is a technique for reconstructing the optical wavefro
 #### STEP 1
 ```math
 \psi_2 = \mathcal{F}^{-1}\left\{ \mathcal{F}\{\psi_1\} \cdot H_{\Delta z_p} \right\} \\
-\phi_2 = \arg{\left\{ \mathcal{F}\{\psi_2\} \right\}}
+\phi_2 = \arg{\left\{ \psi_2 \right\}}
 ```
 The wavefront ``\psi_1`` is propagated by the hologram separation distance ``\Delta z_p`` to calculate the wavefront ``\psi_2``, and its argument is saved as the phase distribution ``\phi_2``.
 
@@ -78,7 +78,7 @@ The wavefront ``\psi_2`` is redefined by the square root of the hologram ``I_2``
 #### STEP 3
 ```math
 \psi_1 = \mathcal{F}^{-1}\left\{ \mathcal{F}\{\psi_2\} \cdot H_{-\Delta z_p} \right\} \\
-\phi_1 = \arg{\left\{ \mathcal{F}\{\psi_1\} \right\}}
+\phi_1 = \arg{\left\{ \psi_1 \right\}}
 ```
 The wavefront ``\psi_2 ``is back-propagated by the hologram separation distance ``\Delta z_p`` to calculate the wavefront ``\psi_1``, and its argument is saved as the phase distribution ``\phi_1``.
 
