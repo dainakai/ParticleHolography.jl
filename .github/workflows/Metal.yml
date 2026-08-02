@@ -39,4 +39,11 @@ jobs:
           Metal.functional() || error("Metal is not functional on this macOS runner")
           Metal.versioninfo()
       - name: Run Metal shared contract
-        run: julia --project=test/environments/metal --startup-file=no --check-bounds=yes test/environments/metal/runtests.jl
+        run: julia --project=test/environments/metal --startup-file=no --check-bounds=yes --code-coverage=user test/environments/metal/runtests.jl
+      - uses: julia-actions/julia-processcoverage@v1
+      - uses: codecov/codecov-action@v6
+        with:
+          files: lcov.info
+          flags: metal
+          token: ${{ secrets.CODECOV_TOKEN }}
+          fail_ci_if_error: false

@@ -43,4 +43,11 @@ jobs:
           CUDA.functional() || error("CUDA is not functional on this runner")
           CUDA.versioninfo()
       - name: Run CUDA contract and integration tests
-        run: julia --project=test/environments/cuda --startup-file=no --check-bounds=yes test/environments/cuda/runtests.jl
+        run: julia --project=test/environments/cuda --startup-file=no --check-bounds=yes --code-coverage=user test/environments/cuda/runtests.jl
+      - uses: julia-actions/julia-processcoverage@v1
+      - uses: codecov/codecov-action@v6
+        with:
+          files: lcov.info
+          flags: cuda
+          token: ${{ secrets.CODECOV_TOKEN }}
+          fail_ci_if_error: false

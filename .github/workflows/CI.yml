@@ -54,5 +54,6 @@ jobs:
         if: matrix.coverage
         with:
           files: lcov.info
+          flags: cpu
           token: ${{ secrets.CODECOV_TOKEN }}
           fail_ci_if_error: false
