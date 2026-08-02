@@ -8,7 +8,11 @@ using UUIDs
     particles = Dict(id => Float32[1, 2, 3])
     full = Dict(id => Float32[1, 1, 2, 3])
     @test particleplot(particles) isa Plots.Plot
+    Plots.plot()
+    @test particleplot!(particles) isa Plots.Plot
     @test trajectoryplot([[id]], full) isa Plots.Plot
+    Plots.plot()
+    @test trajectoryplot!([[id]], full) isa Plots.Plot
 
     mktempdir() do directory
         image1 = reshape(Float32.(1:256), 16, 16) ./ 256

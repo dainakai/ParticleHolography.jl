@@ -1,5 +1,8 @@
 using Random
 using UUIDs
+using Colors
+using FileIO
+using FixedPointNumbers: N0f8
 
 @testset "detection and IO" begin
     binary = falses(7, 7)
@@ -48,6 +51,15 @@ using UUIDs
     draw_contours!(canvas, 1, contours)
     @test canvas[2, 2] == 1
 
+    block = zeros(Int, 7, 7)
+    block[2:5, 2:5] .= 1
+    block_contours = find_external_contours(block)
+    @test length(block_contours) == 1
+    @test length(only(block_contours)) == 12
+    block_canvas = zeros(Int, size(block))
+    draw_contours!(block_canvas, 1, block_contours)
+    @test sum(block_canvas) == 12
+
     padded = pad_with_mean(Float32[1 2 3; 4 5 6], 6)
     @test size(padded) == (6, 6)
     @test padded[3:4, 2:4] == Float32[1 2 3; 4 5 6]
@@ -58,5 +70,23 @@ using UUIDs
         path = joinpath(directory, "particles.json")
         dictsave(path, coordinates)
         @test dictload(path) == coordinates
+
+        image1_path = joinpath(directory, "image1.png")
+        image2_path = joinpath(directory, "image2.png")
+        image1 = Gray{N0f8}.(Float32[0.0 0.25; 0.5 1.0])
+        image2 = Gray{N0f8}.(Float32[0.0 0.5; 0.5 1.0])
+        FileIO.save(image1_path, image1)
+        FileIO.save(image2_path, image2)
+        loaded1 = load_gray2float(image1_path)
+        @test loaded1 ≈ Float32.(image1) atol=1f-6
+        @test eltype(load_grayimg(image1_path)) === N0f8
+        mean_background = make_background([image1_path, image2_path]; mode=:mean)
+        @test mean_background ≈ (loaded1 + load_gray2float(image2_path)) ./ 2 atol=1f-6
+        mode_background = make_background(
+            [image1_path, image2_path, image1_path]; mode=:mode,
+        )
+        @test mode_background ≈ Float64.(image1) atol=1 / 255
+        @test_throws ArgumentError make_background(String[])
+        @test_throws ArgumentError make_background([image1_path]; mode=:median)
     end
 end
