@@ -16,29 +16,30 @@
 
 ## Local verification
 
-- [x] CPU core: 180/180 tests pass on Julia 1.12.6.
+- [x] CPU core: 197/197 tests pass on Julia 1.12.6.
 - [x] CUDA shared/physical contract: 19/19 tests pass on RTX 4080 SUPER.
 - [x] CUDA integration/legacy: 7/7 tests pass on RTX 4080 SUPER.
-- [x] CPU line coverage is 90.1% overall and 96.7% for the optical core.
-- [ ] CPU suite passes on the minimum Julia 1.10 runtime.
+- [x] merged CPU/CUDA/Metal/Plots line coverage is 82.56%; patch coverage is 82.2%.
+- [x] CPU suite passes on the minimum Julia 1.10 runtime.
 - [x] docs build completes without unresolved references.
-- [x] plotting extension test passes headlessly, including diagnostic files (5/5).
+- [x] plotting extension test passes headlessly, including diagnostic files (7/7).
 - [x] phdemo tests pass (14/14), including documented CPU doctor/smoke commands.
 - [x] representative v0.2/v1 reconstruction regression is recorded.
 
 ## GitHub Actions
 
-- [ ] Linux/Windows/macOS CPU matrix is green.
-- [ ] `macos-15` arm64 Metal shared contract is green and not skipped.
-- [ ] self-hosted Linux/X64 CUDA job reports `CUDA.functional() == true` and is green.
-- [ ] documentation and optional plotting jobs are green.
+- [x] Linux/Windows/macOS CPU matrix is green.
+- [x] `macos-15` arm64 Metal shared contract is green and not skipped (18/18).
+- [x] self-hosted Linux/X64 CUDA job reports `CUDA.functional() == true` and is green.
+- [x] documentation and optional plotting jobs are green.
 - [x] fork PRs cannot execute code on the persistent self-hosted CUDA runner.
 
 ## Release operations (require explicit maintainer approval)
 
 - [ ] Review final diff and unresolved limitations.
-- [ ] Commit and push the release branch.
-- [ ] Open/merge the v1 pull request.
+- [x] Commit and push the release branch.
+- [x] Open the v1 pull request as a draft.
+- [ ] Merge the v1 pull request.
 - [ ] Confirm phdemo points to the released v1 compatibility range.
 - [ ] Create signed/annotated `v1.0.0` tag.
 - [ ] Publish GitHub Release with migration and backend notes.

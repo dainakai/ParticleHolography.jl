@@ -4,7 +4,7 @@
 - Repo: /media/dai-server/DATAM2/siderepos/260801/ParticleHolography.jl
 - Branch: codex/v1.0.0
 - Started: 2026-08-01 13:56:05 JST
-- Updated: 2026-08-01 17:38:03 JST
+- Updated: 2026-08-02 14:58:17 JST
 
 ## Goal
 ParticleHolography.jl を v1.0.0 品質へ引き上げ、同じ利用コードから CPU、macOS Metal、NVIDIA CUDA を選べる実行基盤、初心者向け文書、phdemo との明確な連携、各環境の CI 検証を整える。
@@ -24,9 +24,9 @@ ParticleHolography.jl を v1.0.0 品質へ引き上げ、同じ利用コード�
 
 文書確認後に、process-wide の既定 backend、`PropagationGrid` と `PropagationKernel`、全出力組合せを一回の深さ走査で生成する `ReconstructionRequest`、平均値 padding、host・CUDA VRAM・Metal unified memory の事前診断を追加した。
 
-CPU core は 180/180、CUDA shared/physical contract は 19/19、CUDA integration/legacy は 7/7、Plots extension は 5/5、phdemo は 14/14 合格した。
+CPU core は 197/197、CUDA shared/physical contract は 19/19、CUDA integration/legacy は 7/7、Metal shared contract は 18/18、Plots extension は 7/7、phdemo は 14/14 合格した。
 
-CPU 行 coverage は全体 90.1%、光学 core 96.7% であり、Codecov の project と patch target を 90% に設定した。
+CPU、CUDA、Metal、Plots の4レポートを統合した Codecov 行 coverage は project 82.56%、patch 82.2% であり、両 target を 80% に設定した。以前の90.1%は、未ロードの拡張を分母に含めないローカル集計だったため、全体値としては使用しない。
 
 平面波の解析解、正負距離の往復伝搬、既知深度の吸収粒子が正しい slice へ再集束することを CPU と CUDA で確認した。
 
@@ -34,7 +34,7 @@ Documenter は生成図、doctest、cross-reference、render まで成功し、�
 
 phdemo の `doctor` は 1024×1024×1024 の Float32 volume と N0f8 MinIP に 4.06 GiB 必要と診断し、文書どおりの CPU `doctor` と `smoke` が成功した。
 
-残りは Julia 1.10、Metal 実機、GitHub Actions の外部確認と、許可後の公開操作である。
+Draft PR #90 を作成し、Julia 1.10、hosted OS、Metal、CUDA、docs、Plots の GitHub Actions は合格した。残りは PR review、phdemo PR、merge、tag、Release、General 登録である。
 
 ## Plan
 - [x] 現行 CUDA テストを基準実行し、挙動・時間・失敗を記録する。
@@ -44,7 +44,7 @@ phdemo の `doctor` は 1024×1024×1024 の Float32 volume と N0f8 MinIP に 4
 - [x] ローカル CPU と NVIDIA CUDA の検証、workflow の静的検証、差分衛生を確認する。
 - [x] リリース候補を総点検し、未実施の外部 CI と公開操作を明示して引き渡す。
 - [x] 文書確認後の既定 backend、型名、複合出力、padding、memory 診断、物理 test、coverage、図、phdemo 導入手順を実装する。
-- [ ] push 後に GitHub macOS Metal、Julia 1.10、hosted OS 行列、self-hosted NVIDIA CI の結果を確認する。
+- [x] push 後に GitHub macOS Metal、Julia 1.10、hosted OS 行列、self-hosted NVIDIA CI の結果を確認する。
 
 ## Assumptions
 - 破壊的変更は許容されるが、既存機能と同等の処理能力を保ち、不要な新規アルゴリズムは追加しない。

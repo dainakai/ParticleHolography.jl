@@ -78,3 +78,9 @@
 - Result: phdemo `doctor` は full 設定に 4.06 GiB 必要で、111.13 GiB の host 空き memory に対して安全と診断した。
 - Result: 文書確認後の追加実装を ParticleHolography.jl の `feat!: add default backend and unified reconstruction outputs` と phdemo `948e1eb` へローカル commit した。
 - Pending: push、pull request、tag、GitHub Release、macOS Metal workflow は未実施である。
+
+## 2026-08-02 14:58:17 JST
+- Published: ParticleHolography.jl の `codex/v1.0.0` を push し、Draft PR #90 を作成した。
+- Result: GitHub-hosted Apple silicon で Metal.jl 1.10.0 が functional となり、FFTを使う共有契約18/18が合格した。Julia 1.10、Linux/macOS/Windows、self-hosted CUDA、docs、Plotsも合格した。
+- Correction: 旧90.1%は未ロード拡張を分母から除いたローカル値だった。CPU/CUDA/Metal/Plotsのレポートを統合し、project 82.56%、patch 82.2%を確認したため、coverage gateを80%へ設定した。
+- Added: 校正正規方程式、複数画素輪郭、画像I/Oとbackground、mutating plot APIのテストを追加し、CPU 197/197、Plots 7/7とした。

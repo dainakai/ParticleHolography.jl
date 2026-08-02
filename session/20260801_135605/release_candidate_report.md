@@ -80,11 +80,12 @@ phdemo の通常導入と CI は `Project.toml` の `ParticleHolography = "1"` �
 
 | 対象 | 環境 | 結果 |
 | --- | --- | --- |
-| CPU package test | Julia 1.12.6 | 180/180 合格 |
-| CPU line coverage | Julia 1.12.6 | 全体 90.1%、光学 core 96.7% |
+| CPU package test | Julia 1.12.6 | 197/197 合格 |
+| 統合 line coverage | Codecov、CPU/CUDA/Metal/Plots | project 82.56%、patch 82.2% |
 | CUDA shared/physical contract | RTX 4080 SUPER、CUDA.jl 6.2.1、runtime 13.0 | 19/19 合格 |
 | CUDA integration と legacy wrapper | 同上 | 7/7 合格 |
-| Plots extension | headless GR | 5/5 合格 |
+| Metal shared contract | GitHub-hosted macOS 15 arm64、Metal.jl 1.10.0 | 18/18 合格 |
+| Plots extension | headless GR | 7/7 合格 |
 | phdemo | 100 組の 1024×1024 BMP と 64×64×4 smoke | 14/14 合格 |
 | 文書 | doctest、cross-reference、render | 合格 |
 | Julia source | 全ファイルの parse | 合格 |

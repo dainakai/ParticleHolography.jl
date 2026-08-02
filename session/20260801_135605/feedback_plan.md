@@ -119,8 +119,8 @@ phdemo の `Project.toml` は `ParticleHolography = "1"` を維持するため�
 
 上記の完了条件は、ローカルで確認可能な CPU、CUDA、文書、phdemo、coverage の範囲ですべて満たした。
 
-CPU core は 180/180、CUDA shared/physical contract は 19/19、CUDA integration/legacy は 7/7 合格した。
+CPU core は 197/197、CUDA shared/physical contract は 19/19、CUDA integration/legacy は 7/7、Metal shared contract は 18/18 合格した。
 
-CPU line coverage は全体 90.1%、光学 core 96.7% だった。
+CPU、CUDA、Metal、Plots の統合 line coverage は project 82.56%、patch 82.2% だった。未ロード拡張を除外した旧ローカル集計値は全体値として扱わない。
 
-macOS Metal contract と Julia 1.10 を含む GitHub Actions は、branch push 後の確認項目として残っている。
+macOS Metal contract と Julia 1.10 を含む GitHub Actions は Draft PR #90 で合格した。

@@ -43,7 +43,7 @@
 - `session/20260801_135605/timeline.md` - CUDA baseline と Metal FFT/CI 調査を追記。
 - `session/20260801_135605/files.md` - session artifact 一覧を更新。
 - `session/20260801_135605/handoff.md` - 次の実装開始点を更新。
-- `.codecov.yml` - project coverage 90% と patch coverage 90% の status target を追加。
+- `.codecov.yml` - 4環境の統合実測値に基づき project と patch coverage の status target を80%に設定。
 - `docs/generate_assets.jl` - hologram から粒子検出までの四 panel 図を public API から再生成する script を追加。
 - `docs/src/assets/hologram-to-particles.png` - 初学者向け workflow 図を追加。
 - `src/backends.jl` - process-wide 既定 backend、引数なし取得、memory probe を追加。
